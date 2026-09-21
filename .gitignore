@@ -1,0 +1,13 @@
+# Built tables are artifacts; table/src is the source of truth.
+table/dist/
+
+# vpxtool writes a .vbs sidecar next to a .vpx when you run extractvbs.
+# If one of those is present, vpinball loads it INSTEAD of the embedded
+# script, which silently shadows a build. Never commit one.
+*.vpx.vbs
+table/**/*.vbs.bak
+
+# Local reference material (copyrighted tables, scans) stays out of the repo.
+reference/local/
+
+.DS_Store

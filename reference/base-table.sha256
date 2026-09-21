@@ -1,0 +1,7 @@
+# SHA-256 of the exact blankTable.vpx that table/src/ was extracted from.
+# Source: https://github.com/vpinball/vpinball  ->  src/assets/blankTable.vpx
+#
+# Verify a candidate file with:
+#   shasum -a 256 -c reference/base-table.sha256
+# after adjusting the path below to where your copy lives.
+934aed884ac4105e57a9651db3aa6c734edb87bce703bd5c0c76574059358ea3  blankTable.vpx
