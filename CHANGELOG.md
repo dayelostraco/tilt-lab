@@ -39,6 +39,19 @@ Versions track the training capability of the table, not the tooling around it.
   - `tools/check.py` now verifies every table object the script references
     actually exists, and understands one-line subs and sub parameters.
 
+- Milestone 3: ball delivery subsystem.
+  - `scripts/60-feeder.vbs`: direct position and velocity delivery through an
+    invisible zero-scatter spawn kicker, chosen over a kicker launch or a
+    chute because both add variance the trainer cannot afford.
+  - `FeedProfile` class, per-side drop-catch profiles, difficulty-scaled
+    jitter applied to speed and angle so feeds stay in one trajectory family.
+  - Pre- and post-contact ball snapshots taken from the per-frame timer,
+    including the fraction of speed retained through the interaction.
+  - Calibration harness: twenty fixed feeds reporting mean, standard
+    deviation and spread, so feeder repeatability is a measurement rather
+    than an impression.
+  - Engineering keys: `F` feed right, `G` feed left, `C` calibrate.
+
 ### Notes
 - No drills yet. The table boots and plays as a plain lower-playfield table.
   The full nine-drill roster is registered in the menu so the menu itself can

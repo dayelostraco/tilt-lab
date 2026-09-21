@@ -23,11 +23,26 @@ Const KEY_4 = 5    ' increase difficulty
 Const KEY_5 = 6    ' decrease difficulty
 Const KEY_R = 19   ' reset the current drill
 Const KEY_D = 32   ' toggle debug mode
+Const KEY_F = 33   ' feed one ball to the right flipper
+Const KEY_G = 34   ' feed one ball to the left flipper
+Const KEY_C = 46   ' run a 20-feed repeatability calibration
 
 Sub TrainingKeyDown(ByVal keycode)
     Select Case keycode
         Case KEY_D
             DebugToggle
+
+        ' Feeder keys. These exist so the delivery system can be calibrated
+        ' before any drill is built on it; the drill layer will drive the same
+        ' entry points. See docs/tuning.md.
+        Case KEY_F
+            FeedDropCatchTo SIDE_RIGHT, CurrentDifficulty()
+
+        Case KEY_G
+            FeedDropCatchTo SIDE_LEFT, CurrentDifficulty()
+
+        Case KEY_C
+            FeederCalibrate SIDE_RIGHT, 20
 
         Case KEY_1, KEY_2, KEY_3, KEY_4, KEY_5, KEY_R
             ' Drill selection, difficulty and reset arrive with the drill
@@ -43,3 +58,14 @@ Sub TrainingKeyUp(ByVal keycode)
     ' needing a held key (for example a cradle-hold check) have somewhere to
     ' live without editing the core input module again.
 End Sub
+
+' Difficulty, falling back to the fully repeatable feed if the options have
+' not initialised yet. A key press before OptionEvent(0) would otherwise read
+' an empty variant and silently jitter the feed.
+Function CurrentDifficulty()
+    If OptionsReady Then
+        CurrentDifficulty = OptDifficulty
+    Else
+        CurrentDifficulty = DIFF_FIXED
+    End If
+End Function

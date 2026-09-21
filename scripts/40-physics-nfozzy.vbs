@@ -686,6 +686,7 @@ PhysicsFrameTimer.Enabled = True
 
 Sub PhysicsFrameTimer_Timer()
     gBOT = GetBalls
+    FeederUpdate
 End Sub
 
 ' VPW requires these three call sites. Keeping them here, next to the code

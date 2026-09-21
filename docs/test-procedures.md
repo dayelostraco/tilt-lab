@@ -127,7 +127,28 @@ behaviour against the values recorded in [physics.md](physics.md).
 
 ## T3: Milestone 3 feed repeatability
 
-Written when the feeder lands. The core check is objective: run twenty fixed
-feeds, read the pre-contact `ball` snapshots out of the debug log, and confirm
-the spread in position and speed is small enough that the drill is measuring
-the player rather than the feeder.
+**Goal:** confirm the feeder delivers the same ball twice. This is objective
+and needs no judgement about how the table feels.
+
+### Steps
+
+| # | Do this | Expect |
+|---|---|---|
+| 1 | Load the table, press **D**. | Debug overlay on. Among the boot lines, `physics,global physics override: none (correct)`. |
+| 2 | Press **F**. | A ball appears at the top of the right inlane and travels toward the right flipper. A `feed,launch` line appears, then `feed,precontact`, then `feed,postcontact`. |
+| 3 | Press **G**. | Same on the left. |
+| 4 | Press **C**. | Twenty feeds run back to back, ending in one `calib,report` line. |
+| 5 | Read `sd` and `spread` in that line. | Small relative to `meanInSpeed`. This is the actual pass criterion. |
+
+### If it fails
+
+- **No ball appears:** `BallSpawn` is an invisible kicker at the launch point;
+  check the log for a script error on `CreateBallAt`.
+- **`precontact` never logs:** the ball is not getting within
+  `FEED_MEASURE_RADIUS` (90 vpu) of the flipper base. Send the `feed,launch`
+  line so the trajectory can be recomputed.
+- **`sd` is large:** send the whole `calib` block. The launch itself is
+  deterministic, so scatter means the ball is colliding with something on the
+  way down, and the launch point needs moving.
+- **The feed looks wrong but is consistent:** that is a step 2 problem, not a
+  step 1 problem. See [tuning.md](tuning.md).

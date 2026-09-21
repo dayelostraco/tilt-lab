@@ -54,13 +54,17 @@ also tracked in the Linear project
 
 ## Milestone 3: repeatable ball feeder
 
-- [ ] Decide the delivery mechanism (invisible kicker vs direct velocity set
-      vs guided chute). Repeatability outranks visual realism.
-- [ ] `scripts/60-feeder.vbs`: create, position, launch, select side, bound
-      randomisation, repeat, snapshot pre-contact state
-- [ ] Feed profile table in `10-config.vbs`
+- [x] Delivery mechanism chosen: direct position + velocity, via an invisible
+      zero-scatter spawn kicker. Reasoning in `scripts/60-feeder.vbs`.
+- [x] `scripts/60-feeder.vbs`: create, position, launch, select side, bound
+      randomisation, repeat, snapshot pre- and post-contact state
+- [x] `FeedProfile` class with per-side profiles and difficulty-scaled jitter
+- [x] Calibration harness: 20 fixed feeds, reports mean / sd / spread
+- [x] Engineering keys F, G, C
+- [ ] **Run T3.** The launch values are geometrically derived and have never
+      been observed in VPX.
+- [ ] Calibrate the feed to a realistic return speed (needs T3 to pass first)
 - [ ] Visual markers for launch position and intended contact point (debug only)
-- [ ] Write and run test procedure T3
 
 ## Milestone 4: drop catch MVP
 

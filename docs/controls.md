@@ -86,6 +86,14 @@ put.
 | `5` | 6 | Decrease difficulty | milestone 5 |
 | `R` | 19 | Reset the current drill | milestone 4 |
 | `D` | 32 | Toggle debug mode | **working** |
+| `F` | 33 | Feed one ball to the right flipper | **working** |
+| `G` | 34 | Feed one ball to the left flipper | **working** |
+| `C` | 46 | Run a 20-feed repeatability calibration | **working** |
+
+`F`, `G` and `C` are engineering controls, not drill controls. They exist so
+the ball feeder can be calibrated before any drill is built on it, and they
+use the difficulty currently selected in the menu (falling back to the fully
+repeatable `Fixed` feed if the options have not initialised yet).
 
 Keys marked for a later milestone are already bound and log their press
 through `DebugLog` under the `input` category, so the binding can be confirmed

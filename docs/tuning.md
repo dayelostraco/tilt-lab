@@ -31,7 +31,8 @@ invalidates the whole feed table.
 <ms since load>,<category>,<message...>
 ```
 
-Categories in use today: `boot`, `debug`, `input`, `ball`.
+Categories in use today: `boot`, `debug`, `input`, `ball`, `physics`, `feed`,
+`calib`, `options`.
 
 `DebugLogBall` records a full ball snapshot:
 
@@ -61,16 +62,54 @@ one-function change.
 
 ## Calibrating a feed
 
-1. Set the drill to `DIFF_FIXED` so nothing is randomised.
-2. Turn debug on.
-3. Run a set and read the `ball` snapshots at the pre-contact tag. Consistency
-   comes first: if the same launch parameters do not produce the same
-   pre-contact numbers, the delivery mechanism is wrong and no amount of
-   velocity tuning will fix it.
-4. Only once the feed is repeatable, adjust launch velocity and position until
-   the pre-contact numbers match what a real return looks like.
-5. Widen the randomisation bounds one difficulty level at a time, re-checking
-   that the extremes are still trajectories a real machine could produce.
+The order matters. **Repeatability is a measurement; realism is a judgement.**
+Establish the measurement first, because a feed that is not repeatable cannot
+be judged at all.
+
+### Step 1: prove repeatability (no judgement required)
+
+Press `C`. That fires twenty `DIFF_FIXED` feeds at the right flipper and
+prints one line:
+
+```
+<ms>,calib,report,n=20,meanInSpeed=..,sd=..,min=..,max=..,spread=..
+```
+
+`sd` is the whole test. If the standard deviation of the pre-contact speed is
+not small relative to the mean, the delivery mechanism is wrong and no amount
+of velocity tuning will fix it. Only the feeder is being measured here, so
+this tells you nothing about whether the feed is *realistic*, which is the
+point: it isolates one question at a time.
+
+A useful way to read it: if `spread` approaches the difference between a feed
+you can catch and one you cannot, the drill is measuring the feeder rather
+than the player.
+
+### Step 2: make it realistic (judgement required)
+
+Only once step 1 passes. Press `F` (right) or `G` (left) for single feeds and
+read the `precontact` line:
+
+```
+<ms>,feed,precontact,seq=..,dist=..,x=..,y=..,vx=..,vy=..,speed=..,flipperAngle=..,flightMs=..
+```
+
+Adjust `LaunchX/Y` and `VelX/VelY` in the profile until the ball arrives in
+the middle-to-upper region of the raised flipper at a speed that looks like a
+real return. The `postcontact` line reports `retained`, the fraction of speed
+the ball kept through the interaction, which is the number a drop-catch
+verdict will eventually be built on.
+
+**The shipped values are geometrically derived, not measured.** They put the
+ball on a line that reaches the 60% point of the raised flipper, and they
+have never been observed in VPX.
+
+### Step 3: widen the difficulty bands
+
+One level at a time, re-checking that the extremes are still trajectories a
+real machine could produce. Jitter is applied to speed and angle rather than
+to the velocity components, so a jittered feed stays in the same trajectory
+family instead of drifting somewhere the profile never intended.
 
 ## What cannot be tuned from macOS
 
