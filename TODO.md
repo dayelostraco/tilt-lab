@@ -25,6 +25,8 @@ also tracked in the Linear project
 - [x] Trainer key hooks that do not disturb standard bindings
 - [x] VR-navigable drill selector via `Table1.Option` (in-game Table Options)
 - [x] README, ATTRIBUTION, CHANGELOG, docs, test procedure T1
+- [x] Headless load check on the gaming PC: `-Audit` confirms the table loads
+      with no script error (see `docs/physics.md` for what it flagged)
 - [ ] **Run T1a (desktop smoke test)** on any Windows VPX host, VM included
 - [ ] **Run T1b (VR validation)** on the gaming PC with a Quest 3
 
@@ -37,8 +39,12 @@ also tracked in the Linear project
 - [ ] Add `scripts/45-physics-damping.vbs`: rubber dampeners, TargetBouncer
 - [ ] Consider the Fleep mechanical sound set
 - [ ] Credit every ported block in ATTRIBUTION.md as it lands
+- [ ] Port the rolling-sound code off the 10 ms `RollingTimer` onto a
+      frame-synchronised callback. VPX's audit warns it breaks frame pacing,
+      which matters for a timing trainer and collides with 90 Hz VR.
 - [ ] Prune the unused stock asset library from `table/src/gameitems/`
-      (bumper caps, pegs, rulers, alternate flipper models: ~26 MB of `.obj`)
+      (bumper caps, pegs, rulers, alternate flipper models: ~26 MB of `.obj`,
+      measured at 220 MB of GPU memory by VPX's audit)
 - [ ] Write and run test procedure T2
 
 ## Milestone 3: repeatable ball feeder

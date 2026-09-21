@@ -65,6 +65,33 @@ That is useful for live script iteration on Windows, and it is an excellent
 way to spend an hour wondering why a build had no effect. `.gitignore` blocks
 committing one; delete the sidecar when you are done iterating.
 
+## Base table is ahead of the shipped runtime
+
+The first Windows run surfaced a stream of these in the VPX log:
+
+```
+ERROR [IEditable::LoadSharedEditableField] Unhandled token: BGLS
+INFO  [BiffReader::AsObject] While reading tag BGLS 4 were not read and therefore skipped
+```
+
+`BGLS` is `m_desktopBackdrop`, a field written by every part. `blankTable.vpx`
+comes from vpinball **master**, which writes it; the installed VPX 10.8.1.5436
+(`af26b2d93`) predates it and does not read it.
+
+It degrades gracefully: the 4-byte record is skipped and the field keeps its
+default. Nothing breaks. But it logs an ERROR per part, which is noise that
+will hide a real error later, so check the *token name* before believing a
+`LoadSharedEditableField` error is ours.
+
+This also means the base table is slightly ahead of the runtime it has to run
+on. Worth remembering before blaming a future oddity on our own edits.
+
+> Chased and cleared: `vpxtool` is **not** dropping this field. A raw scan of
+> every OLE stream shows 23 live `BGLS` records before and after a round-trip.
+> A naive byte count of the whole file reports 25 against 23, because the
+> original carries two stale copies in unallocated sectors left by an earlier
+> save.
+
 ## Reproducibility
 
 `reference/base-table.sha256` pins the exact base table the repository was

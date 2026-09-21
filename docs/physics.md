@@ -102,6 +102,43 @@ Fixing tilt angle to 6.5 at both ends pins the playfield slope, which matters
 because every feed velocity is calibrated against it. A slope that varies with
 a setting would make the whole feed table meaningless.
 
+## Frame pacing: the RollingTimer warning
+
+VPX's own table audit reports:
+
+```
+Warning: Part 'RollingTimer' uses a timer with a very short period of 10ms,
+below a 60FPS framerate. This will likely cause stutters and the table will
+not support 'frame pacing'.
+```
+
+This is inherited from the blank table and it matters more here than it would
+on a normal table. Frame pacing is what keeps the interval between rendered
+frames even, and a drop catch is a timing judgement measured in a handful of
+frames. A trainer that stutters teaches a timing that the player will not
+reproduce on a machine that does not.
+
+It also collides with VR: at 90 Hz a frame is 11.1 ms, so a 10 ms timer never
+lines up with anything.
+
+The fix is not simply to raise the interval. Modern VPX drives per-frame work
+from a frame-synchronised callback rather than a short timer, and the rolling
+sound code needs porting onto that rather than retuned. Doing it as part of
+milestone 2 keeps all the timing-sensitive work in one place.
+
+## Asset weight
+
+The same audit reports the cost of the unused stock asset library:
+
+```
+Total image size: 11.8 MiB in VPX file, at least 220.10 MiB in GPU memory
+Total number of faces used in primitives: 145744, needing 8.2 MiB
+```
+
+220 MB of GPU memory for a table with no artwork is all bumper caps, pegs,
+rulers and alternate flipper models that the trainer never shows. Pruning it
+is already on the milestone 2 list; this is the number that justifies it.
+
 ## Milestone 2 plan
 
 1. Apply the flipper geometry and physics values above in
