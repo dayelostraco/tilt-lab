@@ -28,16 +28,25 @@ anyone powers on a headset.
    Expect the last line to read `built: .../Pinball Training Lab.vpx (17M)`
    and the line above it to be a green tick from `vpxtool verify`.
 
-2. Copy `table/dist/Pinball Training Lab.vpx` to the VPX tables folder on the
-   Windows machine, normally:
+2. Get the build and `tools/deploy-windows.ps1` onto the Windows host, then:
 
-   ```
-   C:\Visual Pinball\Tables\Pinball Training Lab.vpx
+   ```powershell
+   powershell -ExecutionPolicy Bypass -File deploy-windows.ps1
    ```
 
-3. Confirm there is **no** `Pinball Training Lab.vbs` sitting next to it. If
-   one is there, Visual Pinball loads that file instead of the table's script
-   and the test is meaningless. Delete it.
+   That reports the installed VPX version, copies the table into
+   `<VpxRoot>\Tables`, moves aside any shadowing `.vbs` sidecar, and prints
+   the log diagnostics. It defaults to `D:\Visual Pinball`; pass `-VpxRoot`
+   for a different install.
+
+   To copy by hand instead, the destination is `<VpxRoot>\Tables\Pinball
+   Training Lab.vpx`, and you must confirm there is **no** `Pinball Training
+   Lab.vbs` beside it. Visual Pinball loads that sidecar *instead of* the
+   table's embedded script, which makes the whole test meaningless.
+
+3. After the first run, `deploy-windows.ps1 -LogOnly` re-reads the log. Use it
+   whenever a menu item is missing: a rejected option is reported in the VPX
+   log as a `Table.Option` message and never as a script error.
 
 ### Steps
 
