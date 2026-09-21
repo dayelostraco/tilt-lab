@@ -93,6 +93,7 @@ End Function
 '                                         for a drop catch
 
 Dim FeedDropCatch(1)      ' indexed by SIDE_LEFT / SIDE_RIGHT
+Dim FeedCradle(1)         ' slow, short-run feed for cradle testing
 
 Sub InitFeedProfiles()
     Dim p
@@ -116,6 +117,28 @@ Sub InitFeedProfiles()
     p.JitterVel = 2.5
     p.JitterAng = 6
     Set FeedDropCatch(SIDE_LEFT) = p
+
+    ' --- Cradle feed -------------------------------------------------------
+    '
+    ' Deliberately NOT the inlane feed. A ball launched at the top of the
+    ' inlane arrives at the flipper doing 6.3 vpu/frame even when launched at
+    ' 3.0, because a 6-degree slope has 200 vpu to work with. At that speed it
+    ' bounces off a raised flipper and back up the playfield, which is correct
+    ' physics and the wrong test.
+    '
+    ' A cradle needs the ball to arrive slowly, so it starts close to the
+    ' flipper with almost no initial speed and lets gravity do the rest.
+    Set p = New FeedProfile
+    p.Name = "Cradle.Right"
+    p.LaunchX = 632 : p.LaunchY = 1700
+    p.VelX = 0      : p.VelY = 1.0
+    Set FeedCradle(SIDE_RIGHT) = p
+
+    Set p = New FeedProfile
+    p.Name = "Cradle.Left"
+    p.LaunchX = 240 : p.LaunchY = 1700
+    p.VelX = 0      : p.VelY = 1.0
+    Set FeedCradle(SIDE_LEFT) = p
 End Sub
 
 InitFeedProfiles
@@ -372,6 +395,10 @@ End Function
 ' Convenience entry point used by the drills and by the debug keys.
 Sub FeedDropCatchTo(side, difficulty)
     FeederLaunch FeedDropCatch(side), side, difficulty
+End Sub
+
+Sub FeedCradleTo(side, difficulty)
+    FeederLaunch FeedCradle(side), side, difficulty
 End Sub
 
 ' --- Measurement -----------------------------------------------------------

@@ -117,7 +117,11 @@ Sub ValidationLaunch()
     End Select
 
     FeedScheduleFlipper pressAt, releaseAt
-    FeedDropCatchTo ValSide, DIFF_FIXED
+    If ValMode = VAL_CRADLE Then
+        FeedCradleTo ValSide, DIFF_FIXED
+    Else
+        FeedDropCatchTo ValSide, DIFF_FIXED
+    End If
 End Sub
 
 ' Called when a feed finishes. Records the outcome and advances the sweep.

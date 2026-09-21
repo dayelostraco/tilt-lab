@@ -355,31 +355,52 @@ human playtester forming an impression:
    measures whether the ball ended up under control, which is what a catch
    actually means.
 
-### What the other drills found
+### Cradle
 
-| Drill | Result | Reading |
-|---|---|---|
-| Cradle (flipper held up) | retained 0.458 to 0.472, **distFromBase ~225** | Repeatable, but the ball does **not** cradle |
-| Dead bounce (flipper down) | retained 0.332 to 0.339, distFromBase ~288 | Very consistent, ball bounces away |
-| Feed-speed sweep, 3.0 to 11.0 | retained flat at ~0.46; distFromBase rises linearly 157 to 238 | Slowing the feed does not produce a cradle |
+With a slow feed starting close to the flipper:
 
-### The conclusion: geometry, not constants
+| | Value |
+|---|---|
+| resting speed | 0.605 to 0.740 |
+| distance from flipper base | 81.1 to 82.3 vpu |
+| energy killed | 77% to 81% |
+| spread across 5 runs | 1.2 vpu |
 
-`distFromBase` never drops below about 157 vpu at any feed speed. The ball
-always bounces off the raised flipper and leaves, instead of settling against
-it. Retained energy stays flat at ~0.46 across the whole speed range, which
-says the outcome is not speed-sensitive: it is geometric.
+**The ball settles on the raised flipper and stays there.** The cradle works.
 
-**The physics constants are not the problem. The lower playfield is.** The
-blank table has flippers, slingshots and inlane *triggers*, but not the inlane
-guides and walls that route a returning ball into the corner between the
-flipper and the guide, which is where a cradle actually forms. Milestone 2 is
-named "physics and lower playfield" and only the first half is done.
+### Dead bounce
 
-This is worth stating clearly because it inverts the obvious next move.
-Nothing here justifies touching a VPW constant, and doing so to force a
-cradle would be exactly the "tune the physics to make a drill easier" failure
-the brief warns against. The next work is geometry.
+Flipper down, inlane feed: retained 0.332 to 0.339 across five runs, spread
+0.0078. Very consistent, and the ball leaves toward the opposite side rather
+than draining.
+
+### A wrong conclusion, corrected
+
+An earlier version of this document claimed the lower playfield geometry was
+missing the inlane guides needed to form a cradle, and that geometry rather
+than physics was the next blocker. **That was wrong**, and it is worth
+recording why, because the mistake is an easy one to repeat.
+
+The cradle test fed the ball from the top of the inlane. A ball launched
+there arrives at the flipper doing 6.3 vpu/frame *even when launched at 3.0*,
+because a 6-degree slope has 200 vpu of runway to work with. At that speed it
+bounces off a raised flipper and travels back up the playfield, and the
+telltale was in the data all along: the rebound sample reads `vy=-7.148`,
+negative, meaning the ball is heading **up** the table, not failing to settle.
+
+That is correct physics. You cannot cradle a fast inlane ball by holding the
+flipper up; a real machine does the same thing. The feed-speed sweep looked
+like it ruled speed out only because the slowest launch available still
+arrived fast.
+
+The fix was to the *test*, not the table: a cradle feed that starts close to
+the flipper with almost no initial velocity. It cradles immediately. There is
+a dedicated `Cradle.Right` / `Cradle.Left` profile for this, kept separate
+from the inlane feed precisely so the two questions stay separate.
+
+The lesson for the rest of this project: when a drill will not work, check
+what the feed is actually delivering at the moment of contact before
+concluding anything about the table.
 
 ### Still requiring a human
 

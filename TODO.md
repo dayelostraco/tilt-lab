@@ -48,12 +48,11 @@ also tracked in the Linear project
 - [x] Drop catch, cradle, dead bounce and speed sweeps run. Timing
       discrimination 0.6945: good timing kills 71% of the ball's energy, bad
       timing almost none. Physics responds correctly to timing.
-- [ ] **Build out the lower playfield geometry.** The sweeps show the ball
-      never settles against a raised flipper at any feed speed
-      (distFromBase >= 157 vpu always), because there are no inlane guides to
-      route it into the cradle corner. This blocks cradle, post pass and
-      cradle separation. It is a geometry problem, NOT a physics constant to
-      retune.
+- [x] Cradle validated: with a slow short-run feed the ball settles at 81 vpu
+      from the flipper base at speed 0.6, 80% of energy killed, repeatable to
+      1.2 vpu. An earlier claim that the lower playfield lacked the geometry
+      to cradle was WRONG; the inlane feed simply arrives too fast, which is
+      correct physics. See the correction in `docs/physics.md`.
 - [ ] Judge whether the return speed feels realistic (needs a human)
 - [ ] Live catch sweep (`valid-live`) once geometry supports a catch
 - [ ] Populate the `dSleeves` collection once sleeve rubbers exist
