@@ -117,6 +117,24 @@ def main() -> int:
         if before:
             errors.append(f"'Option Explicit' at line {opts[0]} is preceded by code at line {before[0]}")
 
+    # --- Const initialisers must be literals -------------------------------
+    # VBScript rejects "Const A = B" when B is another Const, with a COMPILE
+    # error, so the whole table fails to load. It is invisible until the
+    # script is actually parsed on Windows, which makes it worth catching here.
+    CONST_RE = re.compile(r"^\s*(?:Public\s+|Private\s+)?Const\s+(\w+)\s*=\s*(.+?)\s*$", re.I)
+    LITERAL = re.compile(
+        r"^(?:"
+        r"[-+]?\d+(?:\.\d+)?(?:[eE][-+]?\d+)?"   # number
+        r"|&[hH][0-9a-fA-F]+"                       # hex
+        r'|"[^"]*"'                                 # string
+        r"|True|False|Empty|Nothing|Null"           # keyword literal
+        r")$", re.I)
+    for n, raw in enumerate(lines, 1):
+        m = CONST_RE.match(strip_comment(raw))
+        if m and not LITERAL.match(m.group(2).strip()):
+            errors.append(f"line {n}: Const {m.group(1)} = {m.group(2).strip()!r} "
+                          f"is not a literal; VBScript rejects this at COMPILE time")
+
     # --- every referenced table object must exist --------------------------
     # The ported VPW code addresses table parts by name. A missing part is a
     # runtime error that only appears once the table is played on Windows,

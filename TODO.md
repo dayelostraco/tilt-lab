@@ -61,9 +61,10 @@ also tracked in the Linear project
 - [x] `FeedProfile` class with per-side profiles and difficulty-scaled jitter
 - [x] Calibration harness: 20 fixed feeds, reports mean / sd / spread
 - [x] Engineering keys F, G, C
-- [ ] **Run T3.** The launch values are geometrically derived and have never
-      been observed in VPX.
-- [ ] Calibrate the feed to a realistic return speed (needs T3 to pass first)
+- [x] **T3 PASSED** (automated, 2026-09-21): 20/20 feeds reached the flipper,
+      pre-contact speed varies 0.56%, contact lands within 10 vpu of target
+- [x] Headless self-test harness (`-CaptureAttract` + `-c1 probe|feed|calib`)
+- [ ] Judge whether 9.16 is a realistic return speed (needs a human)
 - [ ] Visual markers for launch position and intended contact point (debug only)
 
 ## Milestone 4: drop catch MVP

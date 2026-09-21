@@ -44,6 +44,17 @@ EnableRetractPlunger = False
 ' and the "Debug Overlay" menu item both drive it.
 Const DEBUG_DEFAULT_ON = False
 
+' Mirror every log line to Debug.Print, which VPX writes into its own log file
+' as "Script.Print '<line>'" when EnableLog and LogScriptOutput are both on
+' (see ScriptInterpreter::DebuggerModule::Print). That is the persistent,
+' file-backed CSV sink this project needs for longitudinal training data; the
+' ring buffer alone dies with the table.
+'
+' Two caveats. VPX silently drops script output for LOCKED tables, so never
+' lock a table you intend to collect data from. And it costs a file write per
+' line, so it is off by default and turned on for calibration and data runs.
+Const DEBUG_MIRROR_TO_VPX_LOG = True
+
 ' How many log lines to keep in the in-memory ring buffer. VPX has no console,
 ' so the buffer is what the debug overlay renders and what a future CSV export
 ' would drain.
@@ -71,7 +82,10 @@ Const DIFF_BEGINNER     = 1
 Const DIFF_INTERMEDIATE = 2
 Const DIFF_ADVANCED     = 3
 
-Const DEFAULT_DIFFICULTY = DIFF_FIXED
+' VBScript requires a Const initialiser to be a LITERAL: "Const A = B" where
+' B is another Const is a compile error ("Expected literal constant"), not a
+' runtime one, so it takes the whole table down at load.
+Const DEFAULT_DIFFICULTY = 0    ' = DIFF_FIXED
 
 ' Which flipper a drill feeds.
 Const SIDE_LEFT        = 0

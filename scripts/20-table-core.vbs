@@ -72,6 +72,16 @@ Sub Drain_Hit()
 	PlaySound "drain",0,1,AudioPan(Drain),0.25,0,0,1,AudioFade(Drain)
 	Drain.DestroyBall
 	BIP = BIP - 1
+
+	' In the trainer the feeder owns the ball lifecycle. The stock trough
+	' would auto-serve a replacement the moment an attempt drained, which
+	' races the next feed and leaves two balls on the playfield.
+	If FeederOwnsBalls Then
+		If BIP < 0 Then BIP = 0
+		DebugLog "drain", "ball drained,balls=" & (UBound(GetBalls) + 1)
+		Exit Sub
+	End If
+
 	If BIP = 0 then
 		BallRelease.CreateBall
 		BallRelease.Kick 90, 7

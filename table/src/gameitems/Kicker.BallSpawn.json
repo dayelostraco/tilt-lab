@@ -1,8 +1,8 @@
 {
   "Kicker": {
     "center": {
-      "x": 690.0,
-      "y": 1600.0
+      "x": 120.0,
+      "y": 300.0
     },
     "radius": 25.0,
     "is_timer_enabled": false,

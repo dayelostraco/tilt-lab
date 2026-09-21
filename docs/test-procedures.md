@@ -130,6 +130,35 @@ behaviour against the values recorded in [physics.md](physics.md).
 **Goal:** confirm the feeder delivers the same ball twice. This is objective
 and needs no judgement about how the table feels.
 
+### Result: PASSED, 2026-09-21, automated
+
+Run headlessly on VPX 10.8.1.5436 via `tools/attract.ps1 calib`:
+
+```
+n=20, misses=0
+inSpeedMean=9.1601   inSpeedSd=0.0513   inSpeedSpread=0.1410
+contactXMean=534.98  contactXSd=5.2251  contactXSpread=12.7104
+contactYMean=1790.18 contactYSd=3.8048  contactYSpread=9.4376
+retainedMean=1.0060  retainedSd=0.0018  retainedSpread=0.0068
+```
+
+Twenty of twenty feeds reached the flipper. Pre-contact speed varies by
+**0.56%** of the mean. Contact lands at (535.0, 1790.2) against the intended
+60%-of-flipper point at (531.6, 1779.9), so the aim is right to about 10 vpu.
+
+Contact position spreads about 12.7 x 9.4 vpu, roughly a quarter of a ball
+diameter. That residual is not a defect: VPW's `default_scatter = 2.0` adds
+deliberate angular noise to every collision, so a feed that bounces down the
+inlane cannot be perfectly deterministic and should not be. What matters is
+that it is far smaller than the difference between a catchable and an
+uncatchable feed.
+
+**Still a judgement call, and open:** whether 9.16 is a realistic return
+speed. Repeatability is settled; realism is not. See step 2 in
+[tuning.md](tuning.md).
+
+### Steps (manual)
+
 ### Steps
 
 | # | Do this | Expect |
@@ -138,7 +167,26 @@ and needs no judgement about how the table feels.
 | 2 | Press **F**. | A ball appears at the top of the right inlane and travels toward the right flipper. A `feed,launch` line appears, then `feed,precontact`, then `feed,postcontact`. |
 | 3 | Press **G**. | Same on the left. |
 | 4 | Press **C**. | Twenty feeds run back to back, ending in one `calib,report` line. |
-| 5 | Read `sd` and `spread` in that line. | Small relative to `meanInSpeed`. This is the actual pass criterion. |
+| 5 | Read `sd` and `spread` in that line. | Small relative to `meanInSpeed`. This is the actual pass criterion; the automated baseline above is 0.56%. |
+
+### Running it without a keyboard
+
+`tools/attract.ps1` runs the whole thing headlessly on a Windows host:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File attract.ps1 calib 900 10
+```
+
+It uses VPX's `-CaptureAttract` mode, which is the only play mode where
+`Player::IsPlaying()` ignores window focus. **This matters:** VPX pauses the
+physics engine whenever the playfield window is unfocused, so a table
+launched from a script renders and runs timers while simulating nothing.
+Balls sit motionless and every feed looks broken. If a headless run shows a
+frozen ball, check the log for `Pausing Game` before suspecting the feeder.
+
+The `-c1` parameter selects a self-test: `probe` drops a ball in open
+playfield to prove physics is live, `feed` sends one feed, `calib` runs the
+twenty-feed report.
 
 ### If it fails
 

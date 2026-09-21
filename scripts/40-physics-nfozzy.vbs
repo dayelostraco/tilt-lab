@@ -687,12 +687,15 @@ PhysicsFrameTimer.Enabled = True
 Sub PhysicsFrameTimer_Timer()
     gBOT = GetBalls
     FeederUpdate
+    SelfTestTick
+    ProbeTick
 End Sub
 
 ' VPW requires these three call sites. Keeping them here, next to the code
 ' that needs them, rather than buried in the sound or input modules.
 
 Sub LeftFlipper_Collide(parm)
+    FeederNoteFlipperContact LeftFlipper
     CheckLiveCatch ActiveBall, LeftFlipper, LFCount, parm
     LF.ReProcessBalls ActiveBall
     FlippersD.Dampen ActiveBall
@@ -700,6 +703,7 @@ Sub LeftFlipper_Collide(parm)
 End Sub
 
 Sub RightFlipper_Collide(parm)
+    FeederNoteFlipperContact RightFlipper
     CheckLiveCatch ActiveBall, RightFlipper, RFCount, parm
     RF.ReProcessBalls ActiveBall
     FlippersD.Dampen ActiveBall

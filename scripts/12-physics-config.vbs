@@ -51,7 +51,9 @@ Const PHYS_MODERN_STERN = 0
 '   Const PHYS_SYSTEM_11 = 2
 '   Const PHYS_CUSTOM    = 3
 
-Const PhysicsProfile = PHYS_MODERN_STERN
+' Literal, not PHYS_MODERN_STERN: VBScript rejects a Const initialised from
+' another Const at compile time. Keep this in step with the block above.
+Const PhysicsProfile = 0        ' = PHYS_MODERN_STERN
 
 Dim PhysicsProfileName
 PhysicsProfileName = "MODERN_STERN"
@@ -122,7 +124,10 @@ Sub AssertPhysicsProfile()
         ",actual=" & Table1.SlopeMin & ".." & Table1.SlopeMax
     DebugLog "physics", "friction,expected=" & PHYS_PLAYFIELD_FRICTION & _
         ",actual=" & Table1.Friction
-    DebugLog "physics", "gravity,actual=" & Table1.Gravity
+    ' Table.Gravity is NOT the stored gamedata value: PinTable::GetGravity
+    ' returns m_Gravity / GRAVITYCONST, so the stored 1.7629848 reads back as
+    ' about 0.97 here. Both are logged so neither looks like a discrepancy.
+    DebugLog "physics", "gravityScript=" & Table1.Gravity & ",gravityStored=1.7629848" 
     DebugLog "physics", "flipperStrength,expected=" & PHYS_FLIPPER_STRENGTH & _
         ",actual=" & LeftFlipper.Strength & "/" & RightFlipper.Strength
     DebugLog "physics", "flipperMass,actual=" & LeftFlipper.Mass & _

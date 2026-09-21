@@ -42,9 +42,17 @@ End Function
 ' Record one diagnostic line. Always records, even when the overlay is off,
 ' so that turning debug on mid-session still shows recent history.
 Sub DebugLog(category, message)
-    DebugLogBuf(DebugLogHead) = DebugNowMs() & "," & category & "," & message
+    Dim line
+    line = DebugNowMs() & "," & category & "," & message
+
+    DebugLogBuf(DebugLogHead) = line
     DebugLogHead = (DebugLogHead + 1) Mod DEBUG_LOG_CAPACITY
     DebugLogCount = DebugLogCount + 1
+
+    ' Persist to the VPX log file. Prefixed so a session can be pulled back
+    ' out of a log that also contains VPX's own chatter:
+    '   grep "TILTLAB," vpinball.log | sed 's/.*TILTLAB,//' > session.csv
+    If DEBUG_MIRROR_TO_VPX_LOG Then Debug.Print "TILTLAB," & line
 End Sub
 
 ' Returns the buffered lines oldest-first, newline separated.

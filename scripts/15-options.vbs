@@ -88,7 +88,12 @@ ATTEMPT_VALUES = Array(5, 10, 15, 20, 25, 30, 40, 50)
 Sub ReadTrainingOptions()
     Dim attemptIdx
 
-    OptDrill = CInt(Table1.Option("Drill", 0, 8, 1, 0, 0, DRILL_NAMES))
+    ' The extra parentheses around DRILL_NAMES are load-bearing. VBScript
+    ' passes a variable ByRef by default, so the array arrives across the COM
+    ' boundary as VT_VARIANT|VT_BYREF and fails VPX's VT_ARRAY|VT_VARIANT
+    ' check: "the values argument must be omitted or an Array". Wrapping the
+    ' argument in parentheses forces ByVal, which dereferences it.
+    OptDrill = CInt(Table1.Option("Drill", 0, 8, 1, 0, 0, (DRILL_NAMES)))
 
     OptSide = CInt(Table1.Option("Side", 0, 2, 1, 0, 0, _
         Array("Left", "Right", "Alternating")))
@@ -103,7 +108,9 @@ Sub ReadTrainingOptions()
     ' Seconds, not milliseconds: a 0.1 step keeps this on the float path and
     ' "1.2" reads better in the menu than "1200". Converted on read so the
     ' rest of the script keeps working in ms.
-    OptResetDelayMs = CInt(Table1.Option("Reset Delay", 0.4, 3.0, 0.1, 1.2, 0, Empty) * 1000)
+    ' The values argument is omitted entirely rather than passed as Empty,
+    ' which is what makes this register as a Float rather than an enum.
+    OptResetDelayMs = CInt(Table1.Option("Reset Delay", 0.4, 3.0, 0.1, 1.2, 0) * 1000)
 
     ' Off/On makes this a real toggle rather than a two-entry enum.
     OptDebug = (Table1.Option("Debug Overlay", 0, 1, 1, 0, 0, Array("Off", "On")) <> 0)

@@ -212,6 +212,17 @@ EnableRetractPlunger = False
 ' and the "Debug Overlay" menu item both drive it.
 Const DEBUG_DEFAULT_ON = False
 
+' Mirror every log line to Debug.Print, which VPX writes into its own log file
+' as "Script.Print '<line>'" when EnableLog and LogScriptOutput are both on
+' (see ScriptInterpreter::DebuggerModule::Print). That is the persistent,
+' file-backed CSV sink this project needs for longitudinal training data; the
+' ring buffer alone dies with the table.
+'
+' Two caveats. VPX silently drops script output for LOCKED tables, so never
+' lock a table you intend to collect data from. And it costs a file write per
+' line, so it is off by default and turned on for calibration and data runs.
+Const DEBUG_MIRROR_TO_VPX_LOG = True
+
 ' How many log lines to keep in the in-memory ring buffer. VPX has no console,
 ' so the buffer is what the debug overlay renders and what a future CSV export
 ' would drain.
@@ -239,7 +250,10 @@ Const DIFF_BEGINNER     = 1
 Const DIFF_INTERMEDIATE = 2
 Const DIFF_ADVANCED     = 3
 
-Const DEFAULT_DIFFICULTY = DIFF_FIXED
+' VBScript requires a Const initialiser to be a LITERAL: "Const A = B" where
+' B is another Const is a compile error ("Expected literal constant"), not a
+' runtime one, so it takes the whole table down at load.
+Const DEFAULT_DIFFICULTY = 0    ' = DIFF_FIXED
 
 ' Which flipper a drill feeds.
 Const SIDE_LEFT        = 0
@@ -302,7 +316,9 @@ Const PHYS_MODERN_STERN = 0
 '   Const PHYS_SYSTEM_11 = 2
 '   Const PHYS_CUSTOM    = 3
 
-Const PhysicsProfile = PHYS_MODERN_STERN
+' Literal, not PHYS_MODERN_STERN: VBScript rejects a Const initialised from
+' another Const at compile time. Keep this in step with the block above.
+Const PhysicsProfile = 0        ' = PHYS_MODERN_STERN
 
 Dim PhysicsProfileName
 PhysicsProfileName = "MODERN_STERN"
@@ -373,7 +389,10 @@ Sub AssertPhysicsProfile()
         ",actual=" & Table1.SlopeMin & ".." & Table1.SlopeMax
     DebugLog "physics", "friction,expected=" & PHYS_PLAYFIELD_FRICTION & _
         ",actual=" & Table1.Friction
-    DebugLog "physics", "gravity,actual=" & Table1.Gravity
+    ' Table.Gravity is NOT the stored gamedata value: PinTable::GetGravity
+    ' returns m_Gravity / GRAVITYCONST, so the stored 1.7629848 reads back as
+    ' about 0.97 here. Both are logged so neither looks like a discrepancy.
+    DebugLog "physics", "gravityScript=" & Table1.Gravity & ",gravityStored=1.7629848" 
     DebugLog "physics", "flipperStrength,expected=" & PHYS_FLIPPER_STRENGTH & _
         ",actual=" & LeftFlipper.Strength & "/" & RightFlipper.Strength
     DebugLog "physics", "flipperMass,actual=" & LeftFlipper.Mass & _
@@ -497,7 +516,12 @@ ATTEMPT_VALUES = Array(5, 10, 15, 20, 25, 30, 40, 50)
 Sub ReadTrainingOptions()
     Dim attemptIdx
 
-    OptDrill = CInt(Table1.Option("Drill", 0, 8, 1, 0, 0, DRILL_NAMES))
+    ' The extra parentheses around DRILL_NAMES are load-bearing. VBScript
+    ' passes a variable ByRef by default, so the array arrives across the COM
+    ' boundary as VT_VARIANT|VT_BYREF and fails VPX's VT_ARRAY|VT_VARIANT
+    ' check: "the values argument must be omitted or an Array". Wrapping the
+    ' argument in parentheses forces ByVal, which dereferences it.
+    OptDrill = CInt(Table1.Option("Drill", 0, 8, 1, 0, 0, (DRILL_NAMES)))
 
     OptSide = CInt(Table1.Option("Side", 0, 2, 1, 0, 0, _
         Array("Left", "Right", "Alternating")))
@@ -512,7 +536,9 @@ Sub ReadTrainingOptions()
     ' Seconds, not milliseconds: a 0.1 step keeps this on the float path and
     ' "1.2" reads better in the menu than "1200". Converted on read so the
     ' rest of the script keeps working in ms.
-    OptResetDelayMs = CInt(Table1.Option("Reset Delay", 0.4, 3.0, 0.1, 1.2, 0, Empty) * 1000)
+    ' The values argument is omitted entirely rather than passed as Empty,
+    ' which is what makes this register as a Float rather than an enum.
+    OptResetDelayMs = CInt(Table1.Option("Reset Delay", 0.4, 3.0, 0.1, 1.2, 0) * 1000)
 
     ' Off/On makes this a real toggle rather than a two-entry enum.
     OptDebug = (Table1.Option("Debug Overlay", 0, 1, 1, 0, 0, Array("Off", "On")) <> 0)
@@ -631,6 +657,16 @@ Sub Drain_Hit()
 	PlaySound "drain",0,1,AudioPan(Drain),0.25,0,0,1,AudioFade(Drain)
 	Drain.DestroyBall
 	BIP = BIP - 1
+
+	' In the trainer the feeder owns the ball lifecycle. The stock trough
+	' would auto-serve a replacement the moment an attempt drained, which
+	' races the next feed and leaves two balls on the playfield.
+	If FeederOwnsBalls Then
+		If BIP < 0 Then BIP = 0
+		DebugLog "drain", "ball drained,balls=" & (UBound(GetBalls) + 1)
+		Exit Sub
+	End If
+
 	If BIP = 0 then
 		BallRelease.CreateBall
 		BallRelease.Kick 90, 7
@@ -1594,12 +1630,15 @@ PhysicsFrameTimer.Enabled = True
 Sub PhysicsFrameTimer_Timer()
     gBOT = GetBalls
     FeederUpdate
+    SelfTestTick
+    ProbeTick
 End Sub
 
 ' VPW requires these three call sites. Keeping them here, next to the code
 ' that needs them, rather than buried in the sound or input modules.
 
 Sub LeftFlipper_Collide(parm)
+    FeederNoteFlipperContact LeftFlipper
     CheckLiveCatch ActiveBall, LeftFlipper, LFCount, parm
     LF.ReProcessBalls ActiveBall
     FlippersD.Dampen ActiveBall
@@ -1607,6 +1646,7 @@ Sub LeftFlipper_Collide(parm)
 End Sub
 
 Sub RightFlipper_Collide(parm)
+    FeederNoteFlipperContact RightFlipper
     CheckLiveCatch ActiveBall, RightFlipper, RFCount, parm
     RF.ReProcessBalls ActiveBall
     FlippersD.Dampen ActiveBall
@@ -2006,13 +2046,23 @@ End Function
 
 ' --- Profiles --------------------------------------------------------------
 '
-' Geometry these were derived from, for the right flipper:
+' Launch points are taken from the table's own inlane triggers, which is
+' where a returning ball actually travels:
+'
+'   LeftInlane   x 104..154   (centre 129)   y 1551..1589
+'   RightInlane  x 718..768   (centre 743)   y 1552..1590
+'
+' Note these are NOT mirrored: the blank table's left inlane sits about 80 vpu
+' further out than the mirror of the right one. Using each trigger's own
+' centre rather than reflecting one about the centreline matters, and an
+' earlier guess of x=690 for the right feed put the ball inside the slingshot,
+' where it wedged and never reached the flipper.
+'
+' Target geometry for the right flipper:
 '   flipper centre   (595.87, 1803.27), length 114, raised angle -70 deg
 '   raised tip       (488.7, 1764.3)
 '   60% contact pt   (531.6, 1779.9)   <- the middle-to-upper region wanted
 '                                         for a drop catch
-' The left profile is this mirrored about the playfield centreline,
-' x' = 952.94 - x, with VelX negated.
 
 Dim FeedDropCatch(1)      ' indexed by SIDE_LEFT / SIDE_RIGHT
 
@@ -2021,9 +2071,9 @@ Sub InitFeedProfiles()
 
     Set p = New FeedProfile
     p.Name = "DropCatch.Right"
-    ' Top of the right inlane, travelling down and inward toward the flipper.
-    p.LaunchX = 690 : p.LaunchY = 1600
-    p.VelX = -3.0   : p.VelY = 11.0
+    ' In the right inlane, just below the trigger, rolling down it.
+    p.LaunchX = 743 : p.LaunchY = 1600
+    p.VelX = -1.0   : p.VelY = 10.0
     p.JitterPos = 12    ' vpu, full width
     p.JitterVel = 2.5   ' vpu/tick, full width
     p.JitterAng = 6     ' degrees, full width
@@ -2031,8 +2081,9 @@ Sub InitFeedProfiles()
 
     Set p = New FeedProfile
     p.Name = "DropCatch.Left"
-    p.LaunchX = 952.94 - 690 : p.LaunchY = 1600
-    p.VelX = 3.0             : p.VelY = 11.0
+    ' In the left inlane. Its own centre, not the mirror of the right one.
+    p.LaunchX = 129 : p.LaunchY = 1600
+    p.VelX = 1.0    : p.VelY = 10.0
     p.JitterPos = 12
     p.JitterVel = 2.5
     p.JitterAng = 6
@@ -2044,26 +2095,67 @@ InitFeedProfiles
 ' --- Feeder state ----------------------------------------------------------
 
 Const FEED_IDLE     = 0
+Const FEED_ARMING   = 4   ' ball created, waiting for the kicker to release it
 Const FEED_INFLIGHT = 1   ' launched, not yet near the flipper
-Const FEED_NEAR     = 2   ' inside the measurement radius
+Const FEED_CONTACT  = 2   ' the flipper has been hit; reading the outcome
 Const FEED_SETTLING = 3   ' contact happened, waiting to read the outcome
 
-' Distance from the flipper base, in vpu, at which the pre-contact snapshot is
-' taken. Far enough out that the flipper has not touched the ball yet, close
-' enough that the reading describes the actual approach.
-Const FEED_MEASURE_RADIUS = 90
+' The trainer, not the table's trough, decides when a ball exists. Without
+' this the stock Drain_Hit auto-serves a replacement that races the next feed.
+Dim FeederOwnsBalls : FeederOwnsBalls = True
 
-' How long after contact to read the outgoing state, in ms. Long enough for
-' the interaction to finish, short enough that the ball has not travelled
-' somewhere unrelated.
-Const FEED_SETTLE_MS = 220
+' Physics frames to wait between creating a ball and teleporting it into
+' position. A kicker's Kick is queued, not immediate: the ball is not free
+' until the next physics step, and anything written to its position or
+' velocity before then is silently discarded.
+Const FEED_ARM_FRAMES = 8
+
+' Contact is detected from the flipper's own Collide event, not from a
+' proximity radius.
+'
+' The obvious-looking DistanceFromFlipper is NOT a proximity test: it returns
+' the perpendicular distance to the flipper's infinite axis line, so a ball
+' sitting far up the inlane reads as 85 vpu away and would trip any radius
+' check immediately. Using it here produced a "pre-contact" snapshot two
+' frames after launch, describing the launch rather than the approach.
+'
+' Instead the previous frame's state is kept continuously, and when the
+' flipper reports a collision that stored sample IS the state immediately
+' before contact, which is exactly what the drop-catch verdict needs.
+
+' How long after contact to read the outgoing state, counted in PHYSICS
+' FRAMES rather than milliseconds.
+'
+' Frames, not wall-clock, because the measurement has to mean the same thing
+' at 60 Hz desktop, 90 Hz VR, and in VPX's -CaptureAttract mode, which runs
+' the simulation as fast as the machine allows. A wall-clock window would
+' cover a different amount of simulated travel in each.
+' Three frames, not twenty. At twenty the ball has already fallen ~90 vpu
+' further down a 6-degree playfield and gravity has re-accelerated it, so the
+' "retained" ratio came out above 1.0 and looked like the flipper was adding
+' energy. Three frames is enough for the collision to resolve and short
+' enough that the reading is still about the interaction.
+Const FEED_SETTLE_FRAMES = 3
 
 Dim FeedState      : FeedState = FEED_IDLE
 Dim FeedSide       : FeedSide = SIDE_RIGHT
 Dim FeedBallObj    : Set FeedBallObj = Nothing
 Dim FeedLaunchedAt, FeedContactAt
 Dim FeedInSpeed, FeedInVelX, FeedInVelY, FeedInX, FeedInY
+Dim PrevX, PrevY, PrevVX, PrevVY, PrevSpeed, PrevValid
+PrevValid = False
 Dim FeedSeq        : FeedSeq = 0
+Dim FeedFrames     : FeedFrames = 0
+Dim FeedArmFrames  : FeedArmFrames = 0
+Dim PendX, PendY, PendZ, PendVX, PendVY, PendVZ, PendName
+
+' Trace the ball's path while in flight, every N frames, so a feed that never
+' reaches the flipper can be diagnosed from the log instead of by watching.
+Const FEED_TRACE_EVERY = 30
+
+' Give up on a feed that never arrives, so a calibration run cannot hang.
+' Also in frames, for the same reason.
+Const FEED_TIMEOUT_FRAMES = 600
 
 Function FeedTargetFlipper()
     If FeedSide = SIDE_LEFT Then
@@ -2082,7 +2174,7 @@ Sub FeederClear()
     Dim b, balls
     balls = GetBalls
     For b = 0 To UBound(balls)
-        balls(b).Destroy
+        balls(b).DestroyBall   ' IBall exposes DestroyBall, not Destroy
     Next
     Set FeedBallObj = Nothing
     FeedState = FEED_IDLE
@@ -2093,54 +2185,107 @@ End Sub
 ' `difficulty` scales the randomisation; at DIFF_FIXED nothing is randomised
 ' and two calls with the same profile are identical.
 Sub FeederLaunch(profile, side, difficulty)
-    Dim s, jx, jy, jv, ja, vx, vy, spd, ang
+    Dim s2, jx, jy, jv, ja, vx, vy, spd, ang
 
-    FeederClear
     FeedSide = side
     FeedSeq = FeedSeq + 1
-
-    s = FeedJitterScale(difficulty)
+    s2 = FeedJitterScale(difficulty)
 
     ' Rnd returns 0..1; (Rnd-0.5) gives a symmetric full-width band, so
     ' JitterPos really is the total spread rather than a one-sided offset.
-    jx = (Rnd - 0.5) * profile.JitterPos * s
-    jy = (Rnd - 0.5) * profile.JitterPos * s
-    jv = (Rnd - 0.5) * profile.JitterVel * s
-    ja = (Rnd - 0.5) * profile.JitterAng * s
+    jx = (Rnd - 0.5) * profile.JitterPos * s2
+    jy = (Rnd - 0.5) * profile.JitterPos * s2
+    jv = (Rnd - 0.5) * profile.JitterVel * s2
+    ja = (Rnd - 0.5) * profile.JitterAng * s2
 
     ' Speed and angle are perturbed rather than the components, so a jittered
     ' feed stays on a physically plausible trajectory family instead of
     ' drifting into directions the profile never intended.
     spd = Sqr(profile.VelX * profile.VelX + profile.VelY * profile.VelY) + jv
     ang = Atn2(profile.VelY, profile.VelX) + Radians(ja)
-    vx = spd * Cos(ang)
-    vy = spd * Sin(ang)
 
-    Set FeedBallObj = CreateBallAt(profile.LaunchX + jx, profile.LaunchY + jy, profile.LaunchZ)
-    FeedBallObj.VelX = vx
-    FeedBallObj.VelY = vy
-    FeedBallObj.VelZ = profile.VelZ
+    PendName = profile.Name
+    PendX = profile.LaunchX + jx : PendY = profile.LaunchY + jy : PendZ = profile.LaunchZ
+    PendVX = spd * Cos(ang)      : PendVY = spd * Sin(ang)      : PendVZ = profile.VelZ
+
+    FeederEnsureBall
+    FeedArmFrames = 0
+    FeedState = FEED_ARMING
+
+    DebugLog "feed", "launch,seq=" & FeedSeq & ",profile=" & PendName & _
+        ",side=" & side & ",difficulty=" & difficulty & _
+        ",x=" & Round(PendX, 2) & ",y=" & Round(PendY, 2) & _
+        ",vx=" & Round(PendVX, 3) & ",vy=" & Round(PendVY, 3) & _
+        ",speed=" & Round(spd, 3) & ",jitterScale=" & s2
+End Sub
+
+' Guarantees exactly one ball exists, creating it only when there is none.
+' Reusing a ball avoids the create/release dance on every single feed.
+Sub FeederEnsureBall()
+    Dim balls, i
+    balls = GetBalls
+    If UBound(balls) < 0 Then
+        Set FeedBallObj = CreateBallAt()
+    Else
+        ' Keep the first, drop any strays so a feed is never ambiguous.
+        For i = 1 To UBound(balls)
+            balls(i).DestroyBall
+        Next
+        Set FeedBallObj = balls(0)
+    End If
+End Sub
+
+' Teleports the (now free) ball onto the launch point and sets its velocity.
+' This is the actual delivery: setting X/Y/Z and Vel* on a free ball is exact
+' and repeatable in a way no kicker or chute can be.
+Sub FeederPlaceAndRelease()
+    ' Safe to disable now: the ball is free and nowhere near the kicker.
+    BallSpawn.Enabled = False
+
+    FeedBallObj.X = PendX   : FeedBallObj.Y = PendY   : FeedBallObj.Z = PendZ
+    FeedBallObj.VelX = PendVX : FeedBallObj.VelY = PendVY : FeedBallObj.VelZ = PendVZ
+    ' Angular velocity would otherwise carry over from the previous attempt.
+    FeedBallObj.AngMomX = 0 : FeedBallObj.AngMomY = 0 : FeedBallObj.AngMomZ = 0
 
     FeedLaunchedAt = DebugNowMs()
-    FeedState = FEED_INFLIGHT
+    FeedFrames = 0
     FeedInSpeed = 0
-
-    DebugLog "feed", "launch,seq=" & FeedSeq & ",profile=" & profile.Name & _
-        ",side=" & side & ",difficulty=" & difficulty & _
-        ",x=" & Round(profile.LaunchX + jx, 2) & ",y=" & Round(profile.LaunchY + jy, 2) & _
-        ",vx=" & Round(vx, 3) & ",vy=" & Round(vy, 3) & _
-        ",speed=" & Round(spd, 3) & ",jitterScale=" & s
+    PrevValid = False
+    FeedState = FEED_INFLIGHT
 End Sub
 
 ' VPX has no "create a ball at an arbitrary point" call; a ball is born from a
-' kicker. BallSpawn is an invisible, zero-strength kicker that is moved to the
-' launch point first, so the ball appears exactly where the profile says.
-Function CreateBallAt(x, y, z)
-    BallSpawn.X = x
-    BallSpawn.Y = y
+' kicker. BallSpawn is an invisible kicker moved to the launch point first, so
+' the ball appears exactly where the profile says.
+'
+' Two things here are easy to get wrong and both look identical from outside:
+' the ball simply never moves.
+'
+'   1. Kick with strength 0 does NOT release the ball. The kicker keeps
+'      holding it, and every subsequent VelX/VelY assignment is discarded
+'      silently. The kick needs a non-zero strength purely to eject; the
+'      velocity it imparts is overwritten on the next line, so its direction
+'      and magnitude do not matter.
+'   2. The kicker stays sitting at the launch point afterwards, so a later
+'      ball rolling over it would be captured. It is disabled once the ball
+'      is away and re-enabled only to create the next one.
+' Creates a ball at BallSpawn's PARKED position, wherever that is. It does
+' not move the kicker.
+'
+' Moving the kicker onto the launch point and then teleporting the ball to
+' the same coordinates drops the ball straight back into the kicker's capture
+' volume, where it is held forever. Velocity assignments on a captured ball
+' are accepted and then ignored by physics, so the symptom is a ball frozen
+' in place that nonetheless reports exactly the velocity you asked for.
+'
+' So: the kicker stays parked out of the way, and the ball is teleported to
+' the launch point only once it is free.
+Function CreateBallAt()
+    BallSpawn.Enabled = True
     Set CreateBallAt = BallSpawn.CreateBall
-    BallSpawn.Kick 0, 0          ' release without imparting anything
-    CreateBallAt.Z = z
+    BallSpawn.Kick 0, 5          ' non-zero strength is what ejects it; Kick is
+                                 ' queued for the next physics step, so the
+                                 ' kicker must stay enabled until then.
 End Function
 
 ' Convenience entry point used by the drills and by the debug keys.
@@ -2158,50 +2303,91 @@ End Sub
 ' trainer must never make an attempt succeed. See docs/drill-design.md.
 
 Sub FeederUpdate()
-    Dim d, spd, flip
+    Dim spd, flip
 
     If FeedState = FEED_IDLE Then Exit Sub
+    If FeedState = FEED_SETTLING Then Exit Sub
     If FeedBallObj Is Nothing Then Exit Sub
 
     Set flip = FeedTargetFlipper()
-    d = DistanceFromFlipper(FeedBallObj.X, FeedBallObj.Y, flip)
     spd = Sqr(FeedBallObj.VelX * FeedBallObj.VelX + FeedBallObj.VelY * FeedBallObj.VelY)
 
     Select Case FeedState
 
+        Case FEED_ARMING
+            FeedArmFrames = FeedArmFrames + 1
+            If FeedArmFrames >= FEED_ARM_FRAMES Then FeederPlaceAndRelease
+
         Case FEED_INFLIGHT
-            If d <= FEED_MEASURE_RADIUS Then
-                FeedInSpeed = spd
-                FeedInVelX = FeedBallObj.VelX : FeedInVelY = FeedBallObj.VelY
-                FeedInX = FeedBallObj.X       : FeedInY = FeedBallObj.Y
-                FeedContactAt = DebugNowMs()
-                FeedState = FEED_NEAR
-                DebugLog "feed", "precontact,seq=" & FeedSeq & _
-                    ",dist=" & Round(d, 2) & _
-                    ",x=" & Round(FeedInX, 2) & ",y=" & Round(FeedInY, 2) & _
-                    ",vx=" & Round(FeedInVelX, 3) & ",vy=" & Round(FeedInVelY, 3) & _
-                    ",speed=" & Round(spd, 3) & _
-                    ",flipperAngle=" & Round(flip.CurrentAngle, 2) & _
-                    ",flightMs=" & (FeedContactAt - FeedLaunchedAt)
+            FeedFrames = FeedFrames + 1
+
+            If (FeedFrames Mod FEED_TRACE_EVERY) = 0 Then
+                DebugLog "feed", "trace,seq=" & FeedSeq & ",f=" & FeedFrames & _
+                    ",x=" & Round(FeedBallObj.X, 1) & ",y=" & Round(FeedBallObj.Y, 1) & _
+                    ",z=" & Round(FeedBallObj.Z, 1) & _
+                    ",vx=" & Round(FeedBallObj.VelX, 2) & ",vy=" & Round(FeedBallObj.VelY, 2) & _
+                    ",speed=" & Round(spd, 2)
             End If
 
-        Case FEED_NEAR
-            If DebugNowMs() - FeedContactAt >= FEED_SETTLE_MS Then
+            ' The ball drained without ever reaching the flipper. That is a
+            ' legitimate outcome of an attempt, not an error.
+            If UBound(GetBalls) < 0 Then
+                DebugLog "feed", "drained,seq=" & FeedSeq & ",noContact,f=" & FeedFrames
+                FeedState = FEED_SETTLING
+                FeederCalibrateStep
+                Exit Sub
+            End If
+
+            If FeedFrames > FEED_TIMEOUT_FRAMES Then
+                DebugLog "feed", "TIMEOUT,seq=" & FeedSeq & _
+                    ",lastX=" & Round(FeedBallObj.X, 1) & ",lastY=" & Round(FeedBallObj.Y, 1) & _
+                    ",speed=" & Round(spd, 2) & ",balls=" & (UBound(GetBalls) + 1)
+                FeedState = FEED_SETTLING
+                FeederCalibrateStep
+                Exit Sub
+            End If
+
+            ' Roll the one-frame-old sample forward. This is what becomes the
+            ' pre-contact reading the instant the flipper reports a hit.
+            PrevX = FeedBallObj.X       : PrevY = FeedBallObj.Y
+            PrevVX = FeedBallObj.VelX   : PrevVY = FeedBallObj.VelY
+            PrevSpeed = spd             : PrevValid = True
+
+        Case FEED_CONTACT
+            FeedFrames = FeedFrames + 1
+            If FeedFrames - FeedContactAt >= FEED_SETTLE_FRAMES Then
                 FeedState = FEED_SETTLING
                 DebugLog "feed", "postcontact,seq=" & FeedSeq & _
-                    ",dist=" & Round(d, 2) & _
                     ",x=" & Round(FeedBallObj.X, 2) & ",y=" & Round(FeedBallObj.Y, 2) & _
                     ",vx=" & Round(FeedBallObj.VelX, 3) & ",vy=" & Round(FeedBallObj.VelY, 3) & _
                     ",speed=" & Round(spd, 3) & _
                     ",inSpeed=" & Round(FeedInSpeed, 3) & _
                     ",retained=" & Round(SafeRatio(spd, FeedInSpeed), 4) & _
                     ",flipperAngle=" & Round(flip.CurrentAngle, 2)
-                ' Advance a calibration run, if one is in progress. This is
-                ' last so the sample is logged before the next feed clears it.
                 FeederCalibrateStep
             End If
 
     End Select
+End Sub
+
+' Called from LeftFlipper_Collide / RightFlipper_Collide. The stored previous
+' frame is the state immediately before the flipper touched the ball.
+Sub FeederNoteFlipperContact(flipper)
+    If FeedState <> FEED_INFLIGHT Then Exit Sub
+    If Not PrevValid Then Exit Sub
+
+    FeedInX = PrevX     : FeedInY = PrevY
+    FeedInVelX = PrevVX : FeedInVelY = PrevVY
+    FeedInSpeed = PrevSpeed
+    FeedContactAt = FeedFrames
+    FeedState = FEED_CONTACT
+
+    DebugLog "feed", "precontact,seq=" & FeedSeq & _
+        ",x=" & Round(FeedInX, 2) & ",y=" & Round(FeedInY, 2) & _
+        ",vx=" & Round(FeedInVelX, 3) & ",vy=" & Round(FeedInVelY, 3) & _
+        ",speed=" & Round(FeedInSpeed, 3) & _
+        ",flipperAngle=" & Round(flipper.CurrentAngle, 2) & _
+        ",flightFrames=" & FeedFrames
 End Sub
 
 Function SafeRatio(a, b)
@@ -2215,14 +2401,15 @@ End Function
 ' judgement: if the standard deviation of the pre-contact speed is not small,
 ' the delivery mechanism is wrong and no amount of velocity tuning will help.
 
-Dim CalRunsLeft, CalSide, CalSamples, CalCount
-CalRunsLeft = 0 : CalCount = 0
-ReDim CalSamples(63)
+Dim CalRunsLeft, CalSide, CalSamples, CalCount, CalX, CalY, CalOut, CalMiss
+CalRunsLeft = 0 : CalCount = 0 : CalMiss = 0
+ReDim CalSamples(63) : ReDim CalX(63) : ReDim CalY(63) : ReDim CalOut(63)
 
 Sub FeederCalibrate(side, runs)
     CalSide = side
     CalRunsLeft = runs
     CalCount = 0
+    CalMiss = 0
     DebugLog "calib", "start,side=" & side & ",runs=" & runs & ",physics=" & PhysicsSignature()
     FeedDropCatchTo CalSide, DIFF_FIXED
 End Sub
@@ -2233,7 +2420,15 @@ Sub FeederCalibrateStep()
 
     If FeedInSpeed > 0 And CalCount <= UBound(CalSamples) Then
         CalSamples(CalCount) = FeedInSpeed
+        CalX(CalCount) = FeedInX
+        CalY(CalCount) = FeedInY
+        CalOut(CalCount) = SafeRatio(Sqr(FeedBallObj.VelX * FeedBallObj.VelX + _
+                                          FeedBallObj.VelY * FeedBallObj.VelY), FeedInSpeed)
         CalCount = CalCount + 1
+    Else
+        ' Feeds that never reached the flipper are counted, not silently
+        ' dropped: a feed that misses half the time is not a usable feed.
+        CalMiss = CalMiss + 1
     End If
 
     CalRunsLeft = CalRunsLeft - 1
@@ -2245,32 +2440,39 @@ Sub FeederCalibrateStep()
 End Sub
 
 Sub FeederCalibrateReport()
-    Dim i, sum, mean, sd, lo, hi
     If CalCount = 0 Then
-        DebugLog "calib", "report,no samples"
+        DebugLog "calib", "report,NO SAMPLES,misses=" & CalMiss
         Exit Sub
     End If
 
-    sum = 0 : lo = CalSamples(0) : hi = CalSamples(0)
-    For i = 0 To CalCount - 1
-        sum = sum + CalSamples(i)
-        If CalSamples(i) < lo Then lo = CalSamples(i)
-        If CalSamples(i) > hi Then hi = CalSamples(i)
+    DebugLog "calib", "report,n=" & CalCount & ",misses=" & CalMiss & _
+        "," & StatLine("inSpeed", CalSamples, CalCount) & _
+        "," & StatLine("contactX", CalX, CalCount) & _
+        "," & StatLine("contactY", CalY, CalCount) & _
+        "," & StatLine("retained", CalOut, CalCount)
+End Sub
+
+' mean / sd / spread for one sampled quantity, as one CSV fragment.
+Function StatLine(name, arr, n)
+    Dim i, sum, mean, sd, lo, hi
+    sum = 0 : lo = arr(0) : hi = arr(0)
+    For i = 0 To n - 1
+        sum = sum + arr(i)
+        If arr(i) < lo Then lo = arr(i)
+        If arr(i) > hi Then hi = arr(i)
     Next
-    mean = sum / CalCount
+    mean = sum / n
 
     sum = 0
-    For i = 0 To CalCount - 1
-        sum = sum + (CalSamples(i) - mean) * (CalSamples(i) - mean)
+    For i = 0 To n - 1
+        sum = sum + (arr(i) - mean) * (arr(i) - mean)
     Next
-    sd = Sqr(sum / CalCount)
+    sd = Sqr(sum / n)
 
-    DebugLog "calib", "report,n=" & CalCount & _
-        ",meanInSpeed=" & Round(mean, 4) & _
-        ",sd=" & Round(sd, 4) & _
-        ",min=" & Round(lo, 4) & ",max=" & Round(hi, 4) & _
-        ",spread=" & Round(hi - lo, 4)
-End Sub
+    StatLine = name & "Mean=" & Round(mean, 4) & _
+               "," & name & "Sd=" & Round(sd, 4) & _
+               "," & name & "Spread=" & Round(hi - lo, 4)
+End Function
 
 ' ---------------------------------------------------------------------------
 '  module: scripts/90-training-input.vbs
@@ -2394,9 +2596,17 @@ End Function
 ' Record one diagnostic line. Always records, even when the overlay is off,
 ' so that turning debug on mid-session still shows recent history.
 Sub DebugLog(category, message)
-    DebugLogBuf(DebugLogHead) = DebugNowMs() & "," & category & "," & message
+    Dim line
+    line = DebugNowMs() & "," & category & "," & message
+
+    DebugLogBuf(DebugLogHead) = line
     DebugLogHead = (DebugLogHead + 1) Mod DEBUG_LOG_CAPACITY
     DebugLogCount = DebugLogCount + 1
+
+    ' Persist to the VPX log file. Prefixed so a session can be pulled back
+    ' out of a log that also contains VPX's own chatter:
+    '   grep "TILTLAB," vpinball.log | sed 's/.*TILTLAB,//' > session.csv
+    If DEBUG_MIRROR_TO_VPX_LOG Then Debug.Print "TILTLAB," & line
 End Sub
 
 ' Returns the buffered lines oldest-first, newline separated.
@@ -2462,6 +2672,57 @@ End Sub
 '
 '============================================================================
 
+' --- Self-test hook --------------------------------------------------------
+'
+' VPX passes -c1..-c9 through to GetCustomParam(n). Launching with
+'
+'     VPinballX_BGFX64.exe -c1 calib -Play "Pinball Training Lab.vpx"
+'
+' makes the table run its own feeder repeatability check and write the result
+' to the log, with no keyboard and no human. That is what lets T3 be verified
+' from a script rather than from a chair.
+Dim SelfTest
+SelfTest = ""
+On Error Resume Next
+SelfTest = LCase(CStr(GetCustomParam(1)))
+On Error Goto 0
+
+Dim SelfTestArmed
+SelfTestArmed = (SelfTest <> "")
+
+' Frames to wait before firing. The first frames are busy with table setup,
+' and a ball created during them behaves unrepresentatively.
+Const SELFTEST_DELAY_FRAMES = 120
+Dim SelfTestFrames
+SelfTestFrames = 0
+
+Sub SelfTestTick()
+    If Not SelfTestArmed Then Exit Sub
+    SelfTestFrames = SelfTestFrames + 1
+    If SelfTestFrames < SELFTEST_DELAY_FRAMES Then Exit Sub
+
+    SelfTestArmed = False
+    DebugLog "selftest", "mode=" & SelfTest
+
+    Select Case SelfTest
+        Case "calib"
+            FeederCalibrate SIDE_RIGHT, 20
+        Case "calibleft"
+            FeederCalibrate SIDE_LEFT, 20
+        Case "feed"
+            FeedDropCatchTo SIDE_RIGHT, DIFF_FIXED
+
+        ' Discriminating probe: drop a ball in open playfield with zero
+        ' velocity. If it falls, physics is live and any stuck feed is a
+        ' geometry problem at the launch point. If it does not, physics is
+        ' not stepping and nothing about the feeder is to blame.
+        Case "probe"
+            ProbeDropBall
+        Case Else
+            DebugLog "selftest", "unknown mode,ignored"
+    End Select
+End Sub
+
 Sub Table1_Init()
     DebugLog "boot", "Tilt Lab loading"
     DebugLog "boot", "renderingMode=" & RenderingMode & ",desktop=" & CStr(DesktopMode) & ",vr=" & CStr(VRMode)
@@ -2479,5 +2740,47 @@ End Sub
 
 Sub Table1_Exit()
     DebugLog "boot", "exiting"
+End Sub
+
+
+' --- Physics liveness probe ------------------------------------------------
+
+Dim ProbeBall, ProbeFrames, ProbeActive
+ProbeActive = False : ProbeFrames = 0
+
+Sub ProbeDropBall()
+    Dim balls, i
+    balls = GetBalls
+    For i = 0 To UBound(balls)
+        balls(i).DestroyBall
+    Next
+
+    BallSpawn.Enabled = True
+    Set ProbeBall = BallSpawn.CreateBall
+    BallSpawn.Kick 0, 5
+    ProbeFrames = 0
+    ProbeActive = True
+    DebugLog "probe", "created at kicker park point (" & BallSpawn.X & "," & BallSpawn.Y & ")"
+End Sub
+
+Sub ProbeTick()
+    If Not ProbeActive Then Exit Sub
+    ProbeFrames = ProbeFrames + 1
+
+    ' Let it leave the kicker, then teleport to dead centre of an empty area
+    ' of playfield with NO velocity at all, and watch whether gravity works.
+    If ProbeFrames = 10 Then
+        BallSpawn.Enabled = False
+        ProbeBall.X = 476 : ProbeBall.Y = 900 : ProbeBall.Z = BallSize
+        ProbeBall.VelX = 0 : ProbeBall.VelY = 0 : ProbeBall.VelZ = 0
+        DebugLog "probe", "placed at 476,900 with zero velocity"
+    End If
+
+    If ProbeFrames > 10 And (ProbeFrames Mod 30) = 0 And ProbeFrames < 700 Then
+        DebugLog "probe", "f=" & ProbeFrames & _
+            ",x=" & Round(ProbeBall.X, 1) & ",y=" & Round(ProbeBall.Y, 1) & _
+            ",z=" & Round(ProbeBall.Z, 1) & _
+            ",vx=" & Round(ProbeBall.VelX, 2) & ",vy=" & Round(ProbeBall.VelY, 2)
+    End If
 End Sub
 
