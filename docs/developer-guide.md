@@ -87,6 +87,9 @@ These are all real failures that happened here, each of which was silent.
 | Kicker `Kick` with strength 0 | Ball stays captured and silently ignores velocity writes | Non-zero strength |
 | Teleporting a ball onto a kicker | Same: captured, frozen, reports the velocity you set | Park the spawn kicker away |
 | VPX pauses physics when unfocused | Everything renders, nothing simulates | `-CaptureAttract` for headless runs |
+| `Decal.Text` is writable but **not dynamic** | Assignment succeeds, screen never changes | Use a Flasher in DMD mode |
+| `DMDPixels` values written as VBScript literals | Whole panel blows out to white | `CLng()`: it is read with `V_UI4`, and a literal is VT_I2 |
+| `Interval = -1` used for anything timed | Window means a different duration at every frame rate | Positive interval = simulation time |
 
 ## Testing without a human
 
@@ -104,6 +107,11 @@ ignores window focus, and passes `-c1 <mode>` through to `GetCustomParam(1)`.
 | `valid-cradle` | Cradle test |
 | `valid-speed` | Launch-speed sweep |
 | `drill` | Runs a full drill set |
+
+`tools/capture-frame.ps1 <mode>` renders real frames and keeps one;
+`tools/qoi-to-png.py` decodes it (VPX writes QOI, whatever extension it
+uses). That is how the display above was verified from macOS with no
+headset: a successful property assignment proves nothing about rendering.
 
 Everything the script logs also goes to VPX's log file via `Debug.Print`,
 prefixed `TILTLAB,`. To pull a session out as CSV:

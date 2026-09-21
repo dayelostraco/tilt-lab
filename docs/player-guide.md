@@ -94,16 +94,23 @@ Your choices are remembered between sessions.
 
 ## Reading the display
 
-Four lines sit on the apron, below the flippers:
+A dot-matrix panel sits on the apron, below the flippers:
+
+![The training display on the apron](images/dmd-display.png)
 
 ```
 DROP CATCH - RIGHT
-Intermediate
-Attempt 7 / 10    Success 5    71%
-CONTROLLED
+FIXED
+ATTEMPT 28/30  OK 0  0%
+        MISS
 ```
 
-The bottom line is the verdict for the attempt you just made.
+Line by line: the drill and which flipper, the difficulty, your progress
+through the set, and the verdict for the attempt you just made.
+
+It is a real DMD rendered into the playfield, not an overlay, so it is
+readable in VR from your actual viewpoint rather than floating in front of
+the table.
 
 | Verdict | What happened |
 |---|---|

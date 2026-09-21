@@ -72,7 +72,7 @@ Sub SelfTestTick()
         ' be a miss or a drain, which is the correct outcome and still proves
         ' the machinery runs a full set and reports.
         Case "drill"
-            StartDrill DRILL_DROP_CATCH, SIDE_RIGHT, DIFF_FIXED, 5
+            StartDrill DRILL_DROP_CATCH, SIDE_RIGHT, DIFF_FIXED, 10
         Case "drill-cradle"
             StartDrill DRILL_CRADLE, SIDE_RIGHT, DIFF_FIXED, 5
         Case Else
@@ -90,6 +90,7 @@ Sub Table1_Init()
     AssertNoGlobalPhysics
     AssertPhysicsProfile
 
+    InitTrainingDisplay
     DebugRender
 
     DebugLog "boot", "ready,physics=" & PhysicsSignature()

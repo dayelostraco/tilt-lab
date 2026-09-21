@@ -1549,27 +1549,12 @@
     "editor_layer_visibility": false
   },
   {
-    "file_name": "Decal.UILine1.json",
-    "is_locked": false,
-    "editor_layer_visibility": false
-  },
-  {
-    "file_name": "Decal.UILine2.json",
-    "is_locked": false,
-    "editor_layer_visibility": false
-  },
-  {
-    "file_name": "Decal.UILine3.json",
-    "is_locked": false,
-    "editor_layer_visibility": false
-  },
-  {
-    "file_name": "Decal.UILine4.json",
-    "is_locked": false,
-    "editor_layer_visibility": false
-  },
-  {
     "file_name": "Timer.FeedSampleTimer.json",
+    "is_locked": false,
+    "editor_layer_visibility": false
+  },
+  {
+    "file_name": "Flasher.TrainingDMD.json",
     "is_locked": false,
     "editor_layer_visibility": false
   }
