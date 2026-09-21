@@ -17,10 +17,25 @@ CONTROL  ->  TRANSFER  ->  AIM  ->  SCORE
 
 ## Status
 
-**Milestone 1 of 10: project bootstrap.** The table builds, boots and plays as
-a plain lower-playfield table. There are no drills yet, and the physics is
-still stock blank-table physics, which does not feel like a real machine. That
-is the next milestone and it is the highest-value work in the project.
+**Milestones 1 to 4 built; none played by a human yet.**
+
+Everything below was measured by the table testing itself, headlessly, with
+no player input. That is a real limitation and it is stated everywhere it
+applies.
+
+| | |
+|---|---|
+| Physics | Current nFozzy/VPW stack, "Modern Stern" profile. Loads clean on VPX 10.8.1.5436, no script error, no audit warning. |
+| Feed repeatability | 20 of 20 feeds reach the flipper, arrival speed varies **0.42%** |
+| Feed realism | Arrives at **0.808 m/s**, derived from VPX's documented scale, not chosen by feel |
+| Drop catch timing | Discrimination **1.44**: timing changes the outcome a lot |
+| Live catch timing | Discrimination **1.91**: a ~2-frame window between a clean catch and firing the ball up the table |
+| Cradle | Ball settles at 81 vpu from the flipper base, speed 0.03 m/s, repeatable to 1.2 vpu |
+| Drills | Drop catch, live catch and cradle; sets, scoring, stats and a VR display all run |
+
+An independent check that does not rely on any reference table: a ball
+rolling down the playfield reproduces textbook rolling-sphere dynamics to
+**1.5%**. See [`docs/tuning.md`](docs/tuning.md).
 
 See [`TODO.md`](TODO.md) for the current task list and
 [`CHANGELOG.md`](CHANGELOG.md) for what has landed.
@@ -92,15 +107,29 @@ press so the bindings can be confirmed early. Details in
 
 ## Documentation
 
-| Document | What it covers |
+**Two starting points, depending on why you are here.**
+
+### If you want to train with it
+
+**[docs/player-guide.md](docs/player-guide.md)** covers everything: what you
+need, installing, the controls in VR and on desktop, choosing a drill,
+reading the verdicts, and what to do when something looks wrong.
+
+### If you want to change it
+
+**[docs/developer-guide.md](docs/developer-guide.md)** is the entry point:
+repo layout, the script module map, the build and test loop, and a table of
+the traps in this codebase that fail silently.
+
+| Then | Covers |
 |---|---|
 | [architecture.md](docs/architecture.md) | Layering, configuration, measurement, VR |
-| [physics.md](docs/physics.md) | What modern VPX physics is, measured baseline, milestone 2 plan |
-| [drill-design.md](docs/drill-design.md) | The nine drills and how success is detected |
-| [controls.md](docs/controls.md) | Full key binding table |
-| [tuning.md](docs/tuning.md) | Units, the tuning loop, reading the log |
+| [physics.md](docs/physics.md) | Sources for every value, and the validation results |
+| [tuning.md](docs/tuning.md) | Units, the calibration loop, reading the log |
+| [drill-design.md](docs/drill-design.md) | The drills and how success is detected |
+| [controls.md](docs/controls.md) | Full binding table |
 | [vpx-workflow.md](docs/vpx-workflow.md) | Source-controlling a `.vpx` |
-| [test-procedures.md](docs/test-procedures.md) | Exact manual test steps for Windows |
+| [test-procedures.md](docs/test-procedures.md) | Manual test steps for Windows |
 
 ## Credits and licence
 
