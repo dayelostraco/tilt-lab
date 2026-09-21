@@ -684,11 +684,32 @@ gBOT = Array()
 PhysicsFrameTimer.Interval = -1
 PhysicsFrameTimer.Enabled = True
 
+' --- Two clocks, deliberately -----------------------------------------------
+'
+' Interval = -1 fires once per RENDERED frame. Interval > 0 fires from inside
+' the physics loop on SIMULATION time, at up to 1000 Hz (PhysicsEngine.cpp
+' calls FireTimers(0) per physics step when ACCURATETIMERS is on, which it is
+' for modern builds). VPW relies on exactly this: it drives FlipperTricks
+' from RightFlipper at interval 1 and the CoR tracker at interval 10.
+'
+' So anything whose TIMING is part of a measurement belongs on the 1 ms
+' timer, and only visual bookkeeping belongs on the frame timer. Measuring
+' from the frame timer made every sample up to one frame stale: at 90 fps and
+' 0.81 m/s that is 11.1 ms and about 16 vpu of travel, a third of a ball.
+' At 1 ms it is 1.5 vpu.
+
 Sub PhysicsFrameTimer_Timer()
-    gBOT = GetBalls
+    gBOT = GetBalls        ' visual/bookkeeping rate is enough for the array
+    ProbeTick
+End Sub
+
+' Timing-critical: measurement, flipper actuation and drill sequencing.
+FeedSampleTimer.Interval = 1
+FeedSampleTimer.Enabled = True
+
+Sub FeedSampleTimer_Timer()
     FeederUpdate
     SelfTestTick
-    ProbeTick
     DrillTick
 End Sub
 

@@ -28,6 +28,10 @@ Not one where you survived.
 ## What you need
 
 - **Visual Pinball X 10.8.1 BGFX 64-bit**, Windows
+- **Set vsync to "Frame Pacing"** in VPX's video settings. On other settings
+  a heavy frame can cause VPX to skip script timer ticks, which is what the
+  trainer measures your timing with. Any frame rate is fine; 90 fps is the
+  reference.
 - For VR: any headset VPX supports. Developed against Quest 3 over Virtual
   Desktop with OpenXR.
 - Desktop mode works too.

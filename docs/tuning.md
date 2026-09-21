@@ -1,5 +1,55 @@
 # Tuning
 
+## Frame rate, and why it no longer affects the numbers
+
+**Reference setup: 90 fps.** It should not matter, and that is now testable.
+
+VPX has two timer clocks, and the difference is the whole story:
+
+| Timer | Fires | Driven by |
+|---|---|---|
+| `Interval = -1` | once per **rendered frame** | the render loop |
+| `Interval > 0` | on **simulation time**, up to 1000 Hz | the physics loop (`PhysicsEngine.cpp` calls `FireTimers(0)` per physics step) |
+
+Everything whose timing is part of a measurement runs on a 1 ms
+simulation-time timer, `FeedSampleTimer`. Only visual bookkeeping is left on
+the frame timer. This is the same split VPW uses: it drives `FlipperTricks`
+from a 1 ms timer and the CoR tracker from a 10 ms one.
+
+### The evidence
+
+The same 20-feed calibration, run at two different render rates:
+
+| | 10 fps capture | 30 fps capture |
+|---|---|---|
+| mean arrival | 14.9982 | 14.9982 |
+| sd | 0.0683 | 0.0683 |
+| contact X mean | 495.6886 | 495.6886 |
+| contact Y mean | 1818.767 | 1818.767 |
+
+**Identical to every decimal place.** Before the change, when sampling
+happened per rendered frame, the same test gave 14.9494 against 14.9738.
+
+This also fixes sample staleness, which is separate from window duration. A
+reading taken on the frame timer could be a whole frame old: at 90 fps and
+0.81 m/s that is 11.1 ms and about 16 vpu of travel, a third of a ball. At
+1 ms it is 1.5 vpu.
+
+### One caveat that is not in our control
+
+`PhysicsEngine.cpp` skips the simulation-time timers when the script is
+taking too long in a frame, unless the vsync mode is **Frame Pacing**:
+
+```cpp
+if (GetVideoSyncMode() == VideoSyncMode::VSM_FRAME_PACING
+    || m_logicProfiler.Get(PROFILE_SCRIPT) <= 1000 * MAX_TIMERS_MSEC_OVERALL)
+    FireTimers(0);
+```
+
+So **use the Frame Pacing vsync setting**. VPX's own changelog recommends it
+for BGFX anyway. On any other setting a heavy frame can silently drop timer
+ticks, which would put jitter back into the measurements.
+
 ## The loop
 
 ```

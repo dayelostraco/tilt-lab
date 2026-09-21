@@ -1,0 +1,13 @@
+{
+  "Timer": {
+    "center": {
+      "x": 1049.0,
+      "y": 1881.5
+    },
+    "is_timer_enabled": false,
+    "timer_interval": 1,
+    "name": "FeedSampleTimer",
+    "backglass": false,
+    "part_group_name": "Visuals"
+  }
+}

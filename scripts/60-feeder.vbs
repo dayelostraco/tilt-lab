@@ -193,11 +193,11 @@ Const FEED_SETTLING = 3   ' contact happened, waiting to read the outcome
 ' this the stock Drain_Hit auto-serves a replacement that races the next feed.
 Dim FeederOwnsBalls : FeederOwnsBalls = True
 
-' Physics frames to wait between creating a ball and teleporting it into
+' Milliseconds to wait between creating a ball and teleporting it into
 ' position. A kicker's Kick is queued, not immediate: the ball is not free
 ' until the next physics step, and anything written to its position or
 ' velocity before then is silently discarded.
-Const FEED_ARM_FRAMES = 8
+Const FEED_ARM_FRAMES = 15
 
 ' Contact is detected from the flipper's own Collide event, not from a
 ' proximity radius.
@@ -272,9 +272,9 @@ Dim FeedFrames     : FeedFrames = 0
 Dim FeedArmFrames  : FeedArmFrames = 0
 Dim PendX, PendY, PendZ, PendVX, PendVY, PendVZ, PendName
 
-' Trace the ball's path while in flight, every N frames, so a feed that never
-' reaches the flipper can be diagnosed from the log instead of by watching.
-Const FEED_TRACE_EVERY = 30
+' Trace the ball's path while in flight, every N sample ticks (1 ms each), so
+' a feed that never reaches the flipper can be diagnosed from the log.
+Const FEED_TRACE_EVERY = 25
 
 ' Soft-contact fallback.
 '
