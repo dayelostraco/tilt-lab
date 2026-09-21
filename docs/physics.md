@@ -355,6 +355,36 @@ human playtester forming an impression:
    measures whether the ball ended up under control, which is what a catch
    actually means.
 
+### Live catch: a narrow window with a dramatic penalty
+
+Flipper down, raised into the ball at 17 different frames. This is the most
+informative result in the project so far:
+
+| flip vs contact | rebound speed | retained | what happened |
+|---|---|---|---|
+| -24 to -16 frames | 7.4 to 7.9 | 0.46 | Flipped far too early, flipper already back down; plain bounce |
+| **-14 frames** | 7.4 | **0.354** | Partial catch |
+| **-12 frames** | 7.5 | **0.233** | **Clean live catch.** Ball killed to speed 2.0, stays at the flipper |
+| -10 frames | 19.5 | 1.11 | Missed the window; ball launched |
+| -8 to -4 | 33 to 54 | 2.26 to 3.85 | Full flip shot, ball fired up the table |
+| -2 to +8 | 9 to 55 | 1.42 to 3.53 | Late flip, still a shot |
+
+**Discrimination: 3.6166.**
+
+Two frames separate a clean catch from firing the ball up the playfield at
+55 vpu. The window is narrow, missing it is spectacular, and there is no
+sign of a "magnetic" catch anywhere in the range. That is exactly the
+behaviour the brief asks for: *good timing produces a controlled catch,
+imperfect timing produces partial energy reduction, poor timing produces a
+rebound*, and nothing makes every attempt succeed.
+
+It is also the clearest evidence that the nFozzy stack is live and working.
+A stock VPX flipper would not produce this shape.
+
+> The frame counts here are rendered-frame ticks under `-CaptureAttract`,
+> which does not run at wall-clock rate. Do not convert them to milliseconds
+> without re-measuring at a known frame rate.
+
 ### Cradle
 
 With a slow feed starting close to the flipper:

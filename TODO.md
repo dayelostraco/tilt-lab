@@ -54,7 +54,10 @@ also tracked in the Linear project
       to cradle was WRONG; the inlane feed simply arrives too fast, which is
       correct physics. See the correction in `docs/physics.md`.
 - [ ] Judge whether the return speed feels realistic (needs a human)
-- [ ] Live catch sweep (`valid-live`) once geometry supports a catch
+- [x] Live catch sweep: discrimination 3.6166. A 2-frame window separates a
+      clean catch (retained 0.233) from firing the ball up the table at 55
+      vpu. Narrow, punishing, no magnetic catches. Best evidence yet that the
+      nFozzy stack is live.
 - [ ] Populate the `dSleeves` collection once sleeve rubbers exist
 - [ ] Consider the Fleep mechanical sound set
 - [ ] Prune the unused stock asset library from `table/src/gameitems/`
