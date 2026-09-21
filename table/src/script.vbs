@@ -1655,14 +1655,27 @@ End Sub
 ' So the trainer supplies the solenoid half itself. Everything that moves a
 ' flipper goes through these two, so the physics setup and the rotation can
 ' never drift apart again.
+'
+' The upstroke goes through FlipperPolarity.Fire, NOT RotateToEnd. Fire is
+' "RotateToEnd : ProcessBalls", and ProcessBalls is what records the flip
+' timestamp, the ball snapshots and the starting angle that the polarity and
+' velocity corrections are computed from. Calling RotateToEnd alone rotates
+' the flipper and leaves the correction disarmed: ReProcessBalls cannot stand
+' in for it, because it first tests FlipperOn, which depends on the very
+' timestamp ProcessBalls would have set.
+'
+' This was wrong here for the whole of milestones 2 to 4. The flippers moved,
+' so it looked right, but the nFozzy corrections were never running and every
+' measurement taken before this fix described stock VPX flipper behaviour.
+' The reference table calls LF.Fire for exactly this reason.
 
 Sub FlipperUp(side)
     If side = SIDE_LEFT Then
-        FlipperActivate LeftFlipper, LFPress     ' physics params first,
-        LeftFlipper.RotateToEnd                  ' then the movement
+        FlipperActivate LeftFlipper, LFPress   ' physics params
+        LF.Fire                                ' rotate AND arm the correction
     Else
         FlipperActivate RightFlipper, RFPress
-        RightFlipper.RotateToEnd
+        RF.Fire
     End If
 End Sub
 
@@ -1679,11 +1692,17 @@ End Sub
 ' VPW requires these three call sites. Keeping them here, next to the code
 ' that needs them, rather than buried in the sound or input modules.
 
+' NOTE: no FlippersD.Dampen call here. CheckLiveCatch already applies
+' FlippersD.Dampenf, and only when the flipper is at or near its end angle.
+' An unconditional Dampen on top of it rescales the ball to
+' desiredCOR x tracked-incoming-speed on EVERY flipper contact, which forces
+' a caught ball and a hard shot to the same outgoing speed, destroying both,
+' and divides by zero if a catch has zeroed the velocity. The reference table
+' calls only its own sound routine at this point.
 Sub LeftFlipper_Collide(parm)
     FeederNoteFlipperContact LeftFlipper
     CheckLiveCatch ActiveBall, LeftFlipper, LFCount, parm
     LF.ReProcessBalls ActiveBall
-    FlippersD.Dampen ActiveBall
     RandomSoundFlipper
 End Sub
 
@@ -1691,7 +1710,6 @@ Sub RightFlipper_Collide(parm)
     FeederNoteFlipperContact RightFlipper
     CheckLiveCatch ActiveBall, RightFlipper, RFCount, parm
     RF.ReProcessBalls ActiveBall
-    FlippersD.Dampen ActiveBall
     RandomSoundFlipper
 End Sub
 
@@ -3393,12 +3411,26 @@ End Function
 '
 '  Four text decals on the apron, below the flippers.
 '
-'  Decals are used rather than a TextBox because a TextBox is screen-space:
-'  in VR it floats in front of the playfield and reads as a rendering fault.
-'  A decal is real playfield geometry with a scriptable Text property, so it
-'  sits on the apron and is legible from the player's actual viewpoint in
-'  both VR and desktop. It is the only dynamic text VPX offers that survives
-'  being looked at from an angle.
+'  *** THIS DISPLAY DOES NOT WORK AND IS KNOWN TO BE BROKEN. ***
+'
+'  The reasoning was: a TextBox is screen-space and floats in front of the
+'  playfield in VR, whereas a Decal is real playfield geometry and exposes a
+'  writable Text property, so it should be legible from the player's actual
+'  viewpoint.
+'
+'  The writable property is real. The dynamism is not. Decal::put_Text only
+'  stores the string and recomputes sizing; the text TEXTURE is rasterised
+'  once in Decal::RenderSetup and never regenerated. Assignments here
+'  succeed and change nothing on screen.
+'
+'  The correct path is a Flasher in DMD mode: IFlasher exposes DMDWidth,
+'  DMDHeight and DMDPixels, which a script can rewrite every frame, and a
+'  flasher is playfield geometry so it survives being viewed at an angle in
+'  VR. That needs a small bitmap font renderer in script, which is what VPW
+'  tables do for their score displays.
+'
+'  Until then the drill still runs and every verdict is in the log; only the
+'  on-table readout is missing. Tracked in TODO.md.
 '
 '============================================================================
 

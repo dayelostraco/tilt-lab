@@ -412,6 +412,53 @@ human playtester forming an impression:
    measures whether the ball ended up under control, which is what a catch
    actually means.
 
+## CORRECTION: measurements before 2026-09-21 were taken with the corrections disarmed
+
+An external review found two integration defects that invalidated every
+physics measurement taken during milestones 2 to 4. Both are fixed; the
+numbers below the correction notices are the valid ones.
+
+**1. The nFozzy corrections were never armed.** `FlipperUp` called
+`Flipper.RotateToEnd` directly. The correct entry point is
+`FlipperPolarity.Fire`, which is `RotateToEnd` *plus* `ProcessBalls`, and
+`ProcessBalls` is what records the flip timestamp, ball snapshots and start
+angle that the polarity and velocity corrections are computed from.
+`ReProcessBalls` cannot substitute: it first tests `FlipperOn`, which depends
+on the timestamp `ProcessBalls` would have set.
+
+The flippers moved, so it looked correct. But the polarity and velocity
+tables never ran, and every sweep before the fix was measuring **stock VPX
+flipper behaviour**. The claim that those results were "the clearest evidence
+the nFozzy stack is live" was wrong.
+
+**2. A duplicate, unconditional flipper dampener.** Both collide handlers
+called `FlippersD.Dampen ActiveBall`. That was this project's addition, not
+the reference's: `CheckLiveCatch` already applies `FlippersD.Dampenf`, and
+only when the flipper is near its end angle. `Dampen` rescales the ball by
+`desiredCOR / realCOR`, forcing outgoing speed to roughly
+`0.99 x tracked incoming speed` on every contact, which flattens a caught
+ball and a hard shot to the same result and divides by zero if a catch has
+zeroed the velocity.
+
+### What changed once both were fixed
+
+| Measurement | disarmed (invalid) | corrected |
+|---|---|---|
+| Feed arrival | 0.808 m/s, sd 0.42% | 0.808 m/s, sd 0.39% |
+| Feed retained, sd | 0.1405 | **0.0307** |
+| Drop catch discrimination | 1.4427 | **0.4301** |
+| Drop catch retained range | 0.277 to **1.720** | 0.110 to **0.540** |
+| Live catch discrimination | 1.9116 | **1.6438** |
+| Live catch best retained | 0.235 | **0.191** |
+
+The drop-catch range is the tell. With the spurious dampener gone, no
+release timing produces retained above 0.54: a drop catch can no longer add
+energy to the ball, which is physically correct, because releasing a flipper
+cannot drive the ball. The previous maximum of 1.72 was the bug.
+
+The best catches also improved: the drop catch now removes 89% of the ball's
+energy at the optimum, against 72% before.
+
 ### Feed speed, derived rather than chosen
 
 The original feed arrived at the flipper at 0.49 m/s. Grounding that against

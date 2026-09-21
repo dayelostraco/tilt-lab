@@ -4,12 +4,26 @@
 '
 '  Four text decals on the apron, below the flippers.
 '
-'  Decals are used rather than a TextBox because a TextBox is screen-space:
-'  in VR it floats in front of the playfield and reads as a rendering fault.
-'  A decal is real playfield geometry with a scriptable Text property, so it
-'  sits on the apron and is legible from the player's actual viewpoint in
-'  both VR and desktop. It is the only dynamic text VPX offers that survives
-'  being looked at from an angle.
+'  *** THIS DISPLAY DOES NOT WORK AND IS KNOWN TO BE BROKEN. ***
+'
+'  The reasoning was: a TextBox is screen-space and floats in front of the
+'  playfield in VR, whereas a Decal is real playfield geometry and exposes a
+'  writable Text property, so it should be legible from the player's actual
+'  viewpoint.
+'
+'  The writable property is real. The dynamism is not. Decal::put_Text only
+'  stores the string and recomputes sizing; the text TEXTURE is rasterised
+'  once in Decal::RenderSetup and never regenerated. Assignments here
+'  succeed and change nothing on screen.
+'
+'  The correct path is a Flasher in DMD mode: IFlasher exposes DMDWidth,
+'  DMDHeight and DMDPixels, which a script can rewrite every frame, and a
+'  flasher is playfield geometry so it survives being viewed at an angle in
+'  VR. That needs a small bitmap font renderer in script, which is what VPW
+'  tables do for their score displays.
+'
+'  Until then the drill still runs and every verdict is in the log; only the
+'  on-table readout is missing. Tracked in TODO.md.
 '
 '============================================================================
 
