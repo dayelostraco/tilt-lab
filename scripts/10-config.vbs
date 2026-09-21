@@ -39,8 +39,9 @@ EnableRetractPlunger = False
 
 ' --- Debug -----------------------------------------------------------------
 
-' Master switch for the debug overlay and structured logging. Toggled at run
-' time with the D key; this is only the value it starts at.
+' Starting value for the debug overlay only. It is overridden as soon as
+' options initialise (see scripts/15-options.vbs), and after that the D key
+' and the "Debug Overlay" menu item both drive it.
 Const DEBUG_DEFAULT_ON = False
 
 ' How many log lines to keep in the in-memory ring buffer. VPX has no console,
@@ -55,6 +56,8 @@ Const DEBUG_LOG_CAPACITY = 200
 ' feeder subsystem in milestone 3 and will be defined below this block.
 
 ' Attempts in one batch before the trainer reports a result and stops.
+' Exposed in the in-game menu as "Attempts Per Set"; this is the fallback for
+' code running before options initialise.
 Const DEFAULT_ATTEMPTS_PER_SET = 10
 
 ' Pause between the end of one attempt and the next feed, in ms. Long enough

@@ -68,7 +68,16 @@ from it. See [`docs/vpx-workflow.md`](docs/vpx-workflow.md), including the
 ## Controls
 
 Flippers, plunger, nudge and tilt are **unchanged** from any other VPX table.
-Retraining those would drill the wrong reflexes. Drill controls are additive:
+Retraining those would drill the wrong reflexes. Everything else is additive.
+
+**In VR**, the drill selector is VPX's in-game Table Options page. Press
+**X** on the left Touch controller to open it, left stick to move, right
+stick to change a value. VPX exposes no controller state to table scripts and
+has no ray-cast picking, so this is the only menu any table can show in a
+headset. Drill, side, difficulty, attempts per set, reset delay and the debug
+overlay are all selectable there, and the choices persist.
+
+**On desktop**, the same menu is on `F12`, plus keyboard shortcuts:
 
 | Key | Action |
 |---|---|
@@ -77,8 +86,8 @@ Retraining those would drill the wrong reflexes. Drill controls are additive:
 | `R` | Reset the current drill |
 | `D` | Toggle debug mode |
 
-Only `D` does anything today; the rest are bound and log their press so the
-bindings can be confirmed early. Details in
+Only `D` and the menu do anything today; the rest are bound and log their
+press so the bindings can be confirmed early. Details in
 [`docs/controls.md`](docs/controls.md).
 
 ## Documentation

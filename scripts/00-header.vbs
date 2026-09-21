@@ -16,9 +16,11 @@
 '
 '    00-header.vbs        this file: bootstrap, VR/desktop detection
 '    10-config.vbs        ZCFG  every tunable value, in one place
+'    15-options.vbs       ZOPT  VR-navigable drill selector (Table1.Option)
 '    20-table-core.vbs    ZCOR  input, trough, slingshots, GI
 '    30-sound.vbs         ZSND  positional playback, rolling, impacts
 '    50-ball-shadows.vbs  ZSHA  flipper and ball shadows
+'    90-training-input.vbs ZINP drill control keys (desktop mirror)
 '    95-debug.vbs         ZDBG  debug overlay and structured logging
 '    99-boot.vbs          ZBOO  init / exit wiring, runs last
 '

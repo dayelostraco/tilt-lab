@@ -11,6 +11,8 @@ measurement. Nothing serves scoring, theme or rules.
 
 ```
   ┌──────────────────────────────────────────────────────────┐
+  │  options         VR-navigable drill selector             │   15-options
+  ├──────────────────────────────────────────────────────────┤
   │  drills          which feed, how many attempts, verdicts │   80-drills
   ├──────────────────────────────────────────────────────────┤
   │  scoring         did the player control the ball?        │   70-scoring
@@ -84,3 +86,9 @@ and a mis-scaled cabinet trains the wrong one.
 
 Anything flat and screen-space, such as the desktop score text, is hidden in
 VR rather than left floating in front of the playfield.
+
+VPX exposes no VR controller state to VBScript and has no ray-cast picking, so
+a table cannot build a pointer-driven menu. The drill selector therefore rides
+on `Table1.Option` and VPX's own in-game UI, which is the only menu reachable
+in a headset. `scripts/15-options.vbs` documents the registration rules and
+the event timing; [controls.md](controls.md) has the bindings.

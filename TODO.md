@@ -23,8 +23,10 @@ also tracked in the Linear project
 - [x] Static script checker (`tools/check.py`), negative-tested
 - [x] Debug and structured-logging core
 - [x] Trainer key hooks that do not disturb standard bindings
+- [x] VR-navigable drill selector via `Table1.Option` (in-game Table Options)
 - [x] README, ATTRIBUTION, CHANGELOG, docs, test procedure T1
-- [ ] **Run test procedure T1 on Windows** (blocked: needs a Windows VPX host)
+- [ ] **Run T1a (desktop smoke test)** on any Windows VPX host, VM included
+- [ ] **Run T1b (VR validation)** on the gaming PC with a Quest 3
 
 ## Milestone 2: physics and lower playfield
 
@@ -54,6 +56,8 @@ also tracked in the Linear project
 - [ ] `scripts/70-scoring.vbs`, `scripts/80-drills.vbs`, `scripts/90-ui.vbs`
 - [ ] Left and right drop catch drills, 10-attempt sets, reset/repeat
 - [ ] VR-safe training display
+- [ ] In-world flipper/MagnaSave menu for in-flow control, so changing drills
+      mid-session does not require opening the modal in-game UI
 - [ ] Wire keys 1, 2, 3 and R to real behaviour
 
 ## Later milestones
