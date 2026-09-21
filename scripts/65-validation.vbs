@@ -54,19 +54,25 @@ Dim ValAngleAtContact
 ' and intercepts the ball eight frames earlier, at about frame 34. Measured,
 ' not assumed: a first sweep centred on 43 put every single release after
 ' contact had already happened, and reported a perfectly flat response.
-' Re-measured after the feed was calibrated to 0.808 m/s. A faster ball
-' reaches the flipper sooner, so these move with the feed: they were 34 and
-' 42 when the feed arrived at 0.49 m/s. If the feed speed changes again,
-' these must be re-measured from a precontact line's flightFrames, or every
-' sweep will silently test the wrong part of the timing window.
-Const VAL_CONTACT_FRAME_UP   = 20   ' flipper raised (drop catch)
-Const VAL_CONTACT_FRAME_DOWN = 24   ' flipper at rest (live catch, dead bounce)
+' Contact times in SIMULATION milliseconds, measured from a precontact line's
+' flightMs. These were frame counts until an external review pointed out that
+' the counter advances per RENDERED frame, so the actuation point they
+' defined moved with display rate: a "20 frame" release is 333 ms at 60 fps
+' and 67 ms at 300 fps, testing a completely different part of the timing
+' window on different hardware.
+'
+' They still move with the feed: a faster ball reaches the flipper sooner. If
+' the feed speed changes, re-measure these from flightMs.
+Const VAL_CONTACT_MS_UP   = 170   ' flipper raised (drop catch)
+Const VAL_CONTACT_MS_DOWN = 205   ' flipper at rest (live catch, dead bounce)
 
-' The sweep must extend well before contact, because the flipper takes several
-' frames to actually fall after release.
-Const VAL_SWEEP_MIN = -16
-Const VAL_SWEEP_MAX = 8
-Const VAL_SWEEP_STEP = 2
+' Sweep offsets, also in simulation milliseconds. The range extends well
+' before contact because the flipper takes time to actually fall after
+' release. 10 ms is roughly one frame at 90 Hz, which is about the finest
+' control a player has.
+Const VAL_SWEEP_MIN = -140
+Const VAL_SWEEP_MAX = 70
+Const VAL_SWEEP_STEP = 15
 
 ' Speed sweep, in vpu/frame. The inlane feed at ~9 was measured to bounce the
 ' ball straight off a raised flipper and away (distFromBase ~225), so the
@@ -76,7 +82,7 @@ Const VAL_SPEED_MAX = 34.0
 Const VAL_SPEED_STEP = 2.0
 ' That sweep produced: arrival(vpu) = 0.744 x launch(vpu) + 1.086
 
-Dim ValContactFrame
+Dim ValContactMs
 
 ReDim ValResults(63)
 ValResultCount = 0
@@ -85,9 +91,9 @@ Sub ValidationStart(mode, side)
     ValMode = mode
     ValSide = side
     If mode = VAL_DROP Or mode = VAL_CRADLE Or mode = VAL_SPEED Then
-        ValContactFrame = VAL_CONTACT_FRAME_UP
+        ValContactMs = VAL_CONTACT_MS_UP
     Else
-        ValContactFrame = VAL_CONTACT_FRAME_DOWN
+        ValContactMs = VAL_CONTACT_MS_DOWN
     End If
     If mode = VAL_SPEED Then ValOffset = VAL_SPEED_MIN Else ValOffset = VAL_SWEEP_MIN
     ValResultCount = 0
@@ -95,29 +101,29 @@ Sub ValidationStart(mode, side)
     FeedOwner = "valid"
 
     DebugLog "valid", "start,mode=" & mode & ",side=" & side & _
-        ",contactFrame=" & ValContactFrame & _
+        ",contactMs=" & ValContactMs & _
         ",sweep=" & VAL_SWEEP_MIN & ".." & VAL_SWEEP_MAX & " step " & VAL_SWEEP_STEP & _
         ",physics=" & PhysicsSignature()
     ValidationLaunch
 End Sub
 
 Sub ValidationLaunch()
-    Dim pressAt, releaseAt, contactAt
-    contactAt = ValContactFrame + ValOffset
+    Dim pressAt, releaseAt, contactAt   ' all in simulation ms from launch
+    contactAt = ValContactMs + ValOffset
 
     Select Case ValMode
         Case VAL_DROP
             ' Flipper already up before the ball arrives, dropped at contact.
-            pressAt = 1 : releaseAt = contactAt
+            pressAt = 10 : releaseAt = contactAt
         Case VAL_LIVE
             ' Flipper down, raised into the ball.
             pressAt = contactAt : releaseAt = -1
         Case VAL_CRADLE
             ' Up and stays up. Offset is irrelevant; the ball should settle.
-            pressAt = 1 : releaseAt = -1
+            pressAt = 10 : releaseAt = -1
         Case VAL_SPEED
             ' Up and stays up; the sweep axis is launch speed.
-            pressAt = 1 : releaseAt = -1
+            pressAt = 10 : releaseAt = -1
             FeedSpeedOverride = ValOffset
         Case Else   ' VAL_DEAD
             pressAt = -1 : releaseAt = -1

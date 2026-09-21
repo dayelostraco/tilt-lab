@@ -440,24 +440,50 @@ only when the flipper is near its end angle. `Dampen` rescales the ball by
 ball and a hard shot to the same result and divides by zero if a catch has
 zeroed the velocity.
 
+**3. All measurement windows were counted in RENDERED frames** while their
+comments claimed the opposite. The counters advance from an `Interval = -1`
+timer, which fires once per rendered frame, so a "3 frame" window is 50 ms at
+60 fps, 33 ms at 90 fps and 10 ms at 300 fps. Every window, timeout and
+validation actuation point meant something different on different hardware.
+All of them now use `GameTime`, VPX's simulation clock.
+
+A residual limitation remains and is not yet solved: samples are still
+*taken* in a render callback, so a reading can be up to one frame stale even
+though the window it closes is now exact. At 0.81 m/s one 60 Hz frame is
+about 25 vpu of travel, so the logged contact coordinates carry sampling
+phase as well as physical scatter. **Their spread should not be read as
+purely physical.**
+
 ### What changed once both were fixed
 
 | Measurement | disarmed (invalid) | corrected |
 |---|---|---|
 | Feed arrival | 0.808 m/s, sd 0.42% | 0.808 m/s, sd 0.39% |
 | Feed retained, sd | 0.1405 | **0.0307** |
-| Drop catch discrimination | 1.4427 | **0.4301** |
-| Drop catch retained range | 0.277 to **1.720** | 0.110 to **0.540** |
-| Live catch discrimination | 1.9116 | **1.6438** |
-| Live catch best retained | 0.235 | **0.191** |
+| Drop catch discrimination | 1.4427 | **0.4373** |
+| Drop catch retained range | 0.277 to **1.720** | 0.249 to **0.686** |
+| Live catch discrimination | 1.9116 | **2.958** |
+| Live catch best retained | 0.235 | **0.133** |
+| Cradle, 5 runs | n/a | 0.550 to 0.576, spread **0.026** |
 
 The drop-catch range is the tell. With the spurious dampener gone, no
 release timing produces retained above 0.54: a drop catch can no longer add
 energy to the ball, which is physically correct, because releasing a flipper
 cannot drive the ball. The previous maximum of 1.72 was the bug.
 
-The best catches also improved: the drop catch now removes 89% of the ball's
-energy at the optimum, against 72% before.
+The best catches also improved: the live catch now removes 87% of the ball's
+energy at the optimum, against 77% before, and its discrimination rose to
+2.958 because a mistimed flip drives the ball away at three times the speed
+it arrived.
+
+**Open tension, recorded rather than papered over.** The control window is
+250 ms, chosen by measurement: at 600 ms every ball has stopped whatever the
+player did (retained collapsed to 0.0002 with no spread) and the metric loses
+all meaning, while 350 ms had half again the variance of 250. But a cradle
+takes longer than 250 ms to settle, so the cradle drill now reads 0.55 rather
+than the 0.20 it showed on a longer window. A cradle verdict probably needs
+its own, longer window. Until it has one, cradle retained figures are not
+comparable with catch figures.
 
 ### Feed speed, derived rather than chosen
 

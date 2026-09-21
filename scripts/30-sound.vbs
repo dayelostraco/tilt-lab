@@ -153,9 +153,10 @@ Sub Gates_Hit (idx)
 	PlaySound "gate4", 0, Vol(ActiveBall), AudioPan(ActiveBall), 0, Pitch(ActiveBall), 1, 0, AudioFade(ActiveBall)
 End Sub
 
-Sub Spinner_Spin
-	PlaySound "fx_spinner", 0, .25, AudioPan(Spinner), 0.25, 0, 0, 1, AudioFade(Spinner)
-End Sub
+' Sub Spinner_Spin removed: it was inherited from the blank table and calls
+' AudioPan(Spinner), but this table has no Spinner object. The sub was dead
+' because nothing fires the event, but it would have been a runtime error
+' the moment a spinner was added and wired up.
 
 Sub Rubbers_Hit(idx)
  	dim finalspeed

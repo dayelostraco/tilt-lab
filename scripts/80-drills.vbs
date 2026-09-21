@@ -20,9 +20,9 @@ Const DRILL_CRADLE     = 2
 
 Dim DrillActive, DrillId, DrillSide, DrillDifficulty
 Dim DrillAttempt, DrillTotal, DrillSuccess, DrillLastVerdict
-Dim DrillWaitFrames
+Dim DrillWaitUntil
 DrillActive = False : DrillAttempt = 0 : DrillSuccess = 0
-DrillLastVerdict = -1 : DrillWaitFrames = -1
+DrillLastVerdict = -1 : DrillWaitUntil = -1
 
 Function DrillName(d)
     Select Case d
@@ -77,6 +77,9 @@ Sub StartDrill(aDrill, aSide, aDifficulty, aAttempts)
     DrillSuccess = 0
     DrillLastVerdict = -1
     DrillActive = True
+    ' Cancel any countdown left over from a previous set, or pressing R late
+    ' in a reset delay starts attempt 1 and then immediately replaces it.
+    DrillWaitUntil = -1
     FeedOwner = "drill"
 
     ' Header row, so a session log can always be traced back to the physics
@@ -92,7 +95,7 @@ End Sub
 Sub EndDrill()
     DrillActive = False
     FeedOwner = ""
-    DrillWaitFrames = -1
+    DrillWaitUntil = -1
     DebugLog "drill", "end," & DrillName(DrillId) & ",side=" & SideName(DrillSide) & _
         ",attempts=" & DrillAttempt & ",success=" & DrillSuccess & _
         ",accuracy=" & DrillAccuracy() & "%"
@@ -154,27 +157,25 @@ Sub DrillAttemptComplete()
 
     UpdateTrainingDisplay
 
-    ' Pause long enough to read the verdict, then go again. Counted in frames
-    ' for the same reason the feeder's windows are.
-    DrillWaitFrames = OptResetDelayFrames()
+    ' Pause long enough to read the verdict, then go again, in simulation ms.
+    DrillWaitUntil = GameTime + OptResetDelayMsValue()
 End Sub
 
-' Converts the menu's reset delay into frames. 90 Hz is the VR target and the
-' worst case for a frame-counted delay feeling short.
-Function OptResetDelayFrames()
-    Dim ms
-    If OptionsReady Then ms = OptResetDelayMs Else ms = DEFAULT_RESET_DELAY_MS
-    OptResetDelayFrames = Int(ms * 90 / 1000)
+Function OptResetDelayMsValue()
+    If OptionsReady Then
+        OptResetDelayMsValue = OptResetDelayMs
+    Else
+        OptResetDelayMsValue = DEFAULT_RESET_DELAY_MS
+    End If
 End Function
 
 ' Ticked once per rendered frame from the physics timer.
 Sub DrillTick()
     If Not DrillActive Then Exit Sub
-    If DrillWaitFrames < 0 Then Exit Sub
+    If DrillWaitUntil < 0 Then Exit Sub
 
-    DrillWaitFrames = DrillWaitFrames - 1
-    If DrillWaitFrames <= 0 Then
-        DrillWaitFrames = -1
+    If GameTime >= DrillWaitUntil Then
+        DrillWaitUntil = -1
         NextAttempt
     End If
 End Sub

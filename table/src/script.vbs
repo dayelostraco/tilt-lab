@@ -896,9 +896,10 @@ Sub Gates_Hit (idx)
 	PlaySound "gate4", 0, Vol(ActiveBall), AudioPan(ActiveBall), 0, Pitch(ActiveBall), 1, 0, AudioFade(ActiveBall)
 End Sub
 
-Sub Spinner_Spin
-	PlaySound "fx_spinner", 0, .25, AudioPan(Spinner), 0.25, 0, 0, 1, AudioFade(Spinner)
-End Sub
+' Sub Spinner_Spin removed: it was inherited from the blank table and calls
+' AudioPan(Spinner), but this table has no Spinner object. The sub was dead
+' because nothing fires the event, but it would have been a runtime error
+' the moment a spinner was added and wired up.
 
 Sub Rubbers_Hit(idx)
  	dim finalspeed
@@ -2247,18 +2248,14 @@ Const FEED_ARM_FRAMES = 8
 ' How long after contact to read the outgoing state, counted in PHYSICS
 ' FRAMES rather than milliseconds.
 '
-' Frames, not wall-clock, because the measurement has to mean the same thing
-' at 60 Hz desktop, 90 Hz VR, and in VPX's -CaptureAttract mode, which runs
-' the simulation as fast as the machine allows. A wall-clock window would
-' cover a different amount of simulated travel in each.
-' Three frames, not twenty. At twenty the ball has already fallen ~90 vpu
-' further down a 6-degree playfield and gravity has re-accelerated it, so the
-' "retained" ratio came out above 1.0 and looked like the flipper was adding
-' energy. Three frames is enough for the collision to resolve and short
-' enough that the reading is still about the interaction.
-Const FEED_SETTLE_FRAMES = 3
+' 40 ms, not 600. At 600 the ball has already fallen ~90 vpu further down a
+' 6-degree playfield and gravity has re-accelerated it, so the retained
+' ratio came out above 1.0 and looked like the flipper was adding energy.
+' 40 ms is enough for the collision to resolve and short enough that the
+' reading is still about the interaction.
+Const FEED_SETTLE_MS = 40
 
-' A second, later sample. Three frames after contact measures the REBOUND:
+' A second, later sample. The short window measures the REBOUND:
 ' how much speed survived the collision itself. That is the right number for
 ' a dead bounce, and the wrong one for a catch.
 '
@@ -2266,12 +2263,18 @@ Const FEED_SETTLE_FRAMES = 3
 ' control". That needs looking well after the interaction, once the ball has
 ' either settled onto the flipper or run away from it. Both numbers are
 ' recorded because the drills need different ones.
-Const FEED_CONTROL_FRAMES = 45
+'
+' 250 ms, chosen by measurement. At 600 ms everything has stopped moving
+' whatever the player did (retained collapsed to 0.0002 with no spread), so
+' the metric lost all discrimination; at 350 ms the variance was half again
+' as large as at 250. A quarter of a second after contact is also about when
+' a player knows whether they caught it.
+Const FEED_CONTROL_MS = 250
 
 Dim FeedState      : FeedState = FEED_IDLE
 Dim FeedSide       : FeedSide = SIDE_RIGHT
 Dim FeedBallObj    : Set FeedBallObj = Nothing
-Dim FeedLaunchedAt, FeedContactAt
+Dim FeedLaunchedAt, FeedContactAt      ' GameTime ms
 Dim FeedInSpeed, FeedInVelX, FeedInVelY, FeedInX, FeedInY
 Dim FeedReboundSpeed, FeedControlSpeed, FeedControlDist
 Dim PrevX, PrevY, PrevVX, PrevVY, PrevSpeed, PrevValid
@@ -2283,11 +2286,16 @@ Dim FeedSeq        : FeedSeq = 0
 ' validation sweep can never interleave and corrupt each other's samples.
 Dim FeedOwner : FeedOwner = ""
 
-' Flipper actuation scheduled relative to launch, in physics frames.
-' -1 means "do nothing". This is what lets a drill or a validation sweep
-' press and release the flipper at a repeatable moment without a human.
-Dim FeedPressAtFrame, FeedReleaseAtFrame
-FeedPressAtFrame = -1 : FeedReleaseAtFrame = -1
+' Flipper actuation scheduled relative to launch, in SIMULATION ms.
+' -1 means "do nothing". This is what lets a validation sweep press and
+' release the flipper at a repeatable moment without a human.
+'
+' Fired on a >= test with a latch rather than an equality test on a frame
+' counter: a render callback can skip any given millisecond, so an equality
+' test would silently drop the actuation entirely.
+Dim FeedPressAtMs, FeedReleaseAtMs, FeedPressed, FeedReleased
+FeedPressAtMs = -1 : FeedReleaseAtMs = -1
+FeedPressed = False : FeedReleased = False
 
 ' Optional override of the profile's launch speed, for calibration sweeps.
 ' 0 means "use the profile". Kept out of the profile itself so a sweep can
@@ -2317,11 +2325,10 @@ Const FEED_TRACE_EVERY = 30
 ' registered contact on frame 2, before the ball had moved.
 Const FEED_SOFT_RADIUS = 42     ' ball radius 25 + flipper end radius ~12
 Const FEED_SOFT_SPEED  = 2.5
-Const FEED_SOFT_MIN_FRAMES = 10 ' never in the first frames after launch
+Const FEED_SOFT_MIN_MS = 120    ' never in the first moments after launch
 
 ' Give up on a feed that never arrives, so a calibration run cannot hang.
-' Also in frames, for the same reason.
-Const FEED_TIMEOUT_FRAMES = 600
+Const FEED_TIMEOUT_MS = 8000
 
 Function FeedTargetFlipper()
     If FeedSide = SIDE_LEFT Then
@@ -2383,24 +2390,47 @@ Sub FeederLaunch(profile, side, difficulty)
         ",side=" & side & ",difficulty=" & difficulty & _
         ",x=" & Round(PendX, 2) & ",y=" & Round(PendY, 2) & _
         ",vx=" & Round(PendVX, 3) & ",vy=" & Round(PendVY, 3) & _
-        ",speed=" & Round(spd, 3) & ",jitterScale=" & s2
+        ",speed=" & Round(spd, 3) & ",jitterScale=" & s2 & _
+        ",liveBalls=" & (UBound(GetBalls) + 1)
 End Sub
 
-' Destroys every ball and creates a fresh one.
+' Ensures exactly one ball exists and points FeedBallObj at it.
 '
-' An earlier version reused an existing ball to skip the create/release
-' cycle. That raced the drain: when the previous attempt's ball was sitting
-' in the drain kicker, the new feed adopted it, teleported it to the launch
-' point, and then Drain_Hit destroyed it out from under the feed. Nine of
-' twenty attempts in a calibration run reported "drained, no contact" on
-' frame 1. Always starting fresh costs FEED_ARM_FRAMES and removes the race.
+' *** Ball.DestroyBall does NOT destroy the ball you call it on. ***
+'
+' Ball::DestroyBall destroys the engine's current ActiveBall and then clears
+' that pointer. ActiveBall is only ever set by a kicker event, a trigger
+' event or a physics collision (kicker.cpp:888, trigger.cpp:695,
+' PhysicsEngine.cpp:632), never by an ordinary script call. So a loop of
+' `balls(i).DestroyBall` destroys whatever ball happened to touch something
+' last, once, and then destroys nothing at all.
+'
+' An earlier version of this sub did exactly that and appeared to work,
+' because the very next line created a replacement and FeedBallObj pointed
+' at it. Strays could survive unseen.
+'
+' The lifecycle is therefore: create a ball only when there is none, reuse it
+' by teleporting for every feed, and let the DRAIN destroy it. The drain's
+' Drain.DestroyBall is a kicker call, and a kicker does set ActiveBall, so
+' that one is reliable.
 Sub FeederEnsureBall()
-    Dim balls, i
+    Dim balls
     balls = GetBalls
-    For i = 0 To UBound(balls)
-        balls(i).DestroyBall
-    Next
-    Set FeedBallObj = CreateBallAt()
+
+    If UBound(balls) < 0 Then
+        Set FeedBallObj = CreateBallAt()
+        Exit Sub
+    End If
+
+    ' More than one ball means something went wrong upstream. It cannot be
+    ' silently cleaned up here for the reason above, so say so rather than
+    ' pretend. Single-ball drills should never reach this.
+    If UBound(balls) > 0 Then
+        DebugLog "feed", "WARNING,seq=" & FeedSeq & ",stray balls=" & (UBound(balls) + 1) & _
+            ",cannot destroy by script; reusing the first"
+    End If
+
+    Set FeedBallObj = balls(0)
 End Sub
 
 ' Teleports the (now free) ball onto the launch point and sets its velocity.
@@ -2415,7 +2445,7 @@ Sub FeederPlaceAndRelease()
     ' Angular velocity would otherwise carry over from the previous attempt.
     FeedBallObj.AngMomX = 0 : FeedBallObj.AngMomY = 0 : FeedBallObj.AngMomZ = 0
 
-    FeedLaunchedAt = DebugNowMs()
+    FeedLaunchedAt = GameTime
     FeedFrames = 0
     FeedInSpeed = 0
     PrevValid = False
@@ -2428,20 +2458,26 @@ End Sub
 ' A drop catch is press at 0 (already up before the ball arrives) and release
 ' at contact; a live catch is press at contact with no release.
 Sub FeedScheduleFlipper(pressAt, releaseAt)
-    FeedPressAtFrame = pressAt
-    FeedReleaseAtFrame = releaseAt
+    FeedPressAtMs = pressAt
+    FeedReleaseAtMs = releaseAt
+    FeedPressed = False
+    FeedReleased = False
 End Sub
 
 Sub FeedActuate()
-    Dim flip
+    Dim flip, t
     Set flip = FeedTargetFlipper()
-    If FeedFrames = FeedPressAtFrame Then
+    t = GameTime - FeedLaunchedAt
+
+    If (Not FeedPressed) And FeedPressAtMs >= 0 And t >= FeedPressAtMs Then
+        FeedPressed = True
         FlipperUp FeedSide
-        DebugLog "act", "press,seq=" & FeedSeq & ",f=" & FeedFrames
+        DebugLog "act", "press,seq=" & FeedSeq & ",ms=" & t
     End If
-    If FeedFrames = FeedReleaseAtFrame Then
+    If (Not FeedReleased) And FeedReleaseAtMs >= 0 And t >= FeedReleaseAtMs Then
+        FeedReleased = True
         FlipperDown FeedSide
-        DebugLog "act", "release,seq=" & FeedSeq & ",f=" & FeedFrames & _
+        DebugLog "act", "release,seq=" & FeedSeq & ",ms=" & t & _
             ",angle=" & Round(flip.CurrentAngle, 2)
     End If
 End Sub
@@ -2512,6 +2548,18 @@ Sub FeederUpdate()
 
         Case FEED_ARMING
             FeedArmFrames = FeedArmFrames + 1
+
+            ' The drain can destroy the ball we just adopted: the previous
+            ' attempt's ball may still have been sitting in the drain kicker
+            ' when this feed claimed it. That is a race, not an outcome, so
+            ' re-create and re-arm rather than scoring a phantom drain.
+            If UBound(GetBalls) < 0 Then
+                DebugLog "feed", "rearm,seq=" & FeedSeq & ",ball lost during arming"
+                Set FeedBallObj = CreateBallAt()
+                FeedArmFrames = 0
+                Exit Sub
+            End If
+
             If FeedArmFrames >= FEED_ARM_FRAMES Then FeederPlaceAndRelease
 
         Case FEED_INFLIGHT
@@ -2535,10 +2583,11 @@ Sub FeederUpdate()
                 Exit Sub
             End If
 
-            If FeedFrames > FEED_TIMEOUT_FRAMES Then
+            If GameTime - FeedLaunchedAt > FEED_TIMEOUT_MS Then
                 DebugLog "feed", "TIMEOUT,seq=" & FeedSeq & _
                     ",lastX=" & Round(FeedBallObj.X, 1) & ",lastY=" & Round(FeedBallObj.Y, 1) & _
-                    ",speed=" & Round(spd, 2) & ",balls=" & (UBound(GetBalls) + 1)
+                    ",speed=" & Round(spd, 2) & ",ms=" & (GameTime - FeedLaunchedAt) & _
+                    ",balls=" & (UBound(GetBalls) + 1)
                 FeedState = FEED_SETTLING
                 FeedNotifyComplete
                 Exit Sub
@@ -2547,7 +2596,7 @@ Sub FeederUpdate()
             ' Soft contact: close to the flipper and barely moving. Checked
             ' before the sample rolls forward so the reading describes the
             ' approach rather than the already-stopped ball.
-            If spd <= FEED_SOFT_SPEED And PrevValid And FeedFrames >= FEED_SOFT_MIN_FRAMES Then
+            If spd <= FEED_SOFT_SPEED And PrevValid And (GameTime - FeedLaunchedAt) >= FEED_SOFT_MIN_MS Then
                 If DistanceToFlipperSurface(FeedBallObj.X, FeedBallObj.Y, flip) <= FEED_SOFT_RADIUS Then
                     DebugLog "feed", "softcontact,seq=" & FeedSeq & ",f=" & FeedFrames
                     FeederNoteFlipperContact flip
@@ -2564,7 +2613,7 @@ Sub FeederUpdate()
         Case FEED_CONTACT
             FeedFrames = FeedFrames + 1
             FeedActuate
-            If FeedFrames - FeedContactAt >= FEED_SETTLE_FRAMES Then
+            If GameTime - FeedContactAt >= FEED_SETTLE_MS Then
                 FeedReboundSpeed = spd
                 FeedState = FEED_CONTROL
                 DebugLog "feed", "rebound,seq=" & FeedSeq & _
@@ -2590,7 +2639,7 @@ Sub FeederUpdate()
                 Exit Sub
             End If
 
-            If FeedFrames - FeedContactAt >= FEED_CONTROL_FRAMES Then
+            If GameTime - FeedContactAt >= FEED_CONTROL_MS Then
                 FeedControlSpeed = spd
                 FeedControlDist = Distance(FeedBallObj.X, FeedBallObj.Y, flip.X, flip.Y)
                 FeedState = FEED_SETTLING
@@ -2626,7 +2675,7 @@ Sub FeederNoteFlipperContact(flipper)
     FeedInX = PrevX     : FeedInY = PrevY
     FeedInVelX = PrevVX : FeedInVelY = PrevVY
     FeedInSpeed = PrevSpeed
-    FeedContactAt = FeedFrames
+    FeedContactAt = GameTime
     FeedState = FEED_CONTACT
     ValAngleAtContact = flipper.CurrentAngle
 
@@ -2635,7 +2684,7 @@ Sub FeederNoteFlipperContact(flipper)
         ",vx=" & Round(FeedInVelX, 3) & ",vy=" & Round(FeedInVelY, 3) & _
         ",speed=" & Round(FeedInSpeed, 3) & ",speedMS=" & ToMS(FeedInSpeed) & _
         ",flipperAngle=" & Round(flipper.CurrentAngle, 2) & _
-        ",flightFrames=" & FeedFrames
+        ",flightMs=" & (GameTime - FeedLaunchedAt) & ",flightFrames=" & FeedFrames
 End Sub
 
 ' Perpendicular distance from a point to the flipper's line SEGMENT, from
@@ -2808,19 +2857,25 @@ Dim ValAngleAtContact
 ' and intercepts the ball eight frames earlier, at about frame 34. Measured,
 ' not assumed: a first sweep centred on 43 put every single release after
 ' contact had already happened, and reported a perfectly flat response.
-' Re-measured after the feed was calibrated to 0.808 m/s. A faster ball
-' reaches the flipper sooner, so these move with the feed: they were 34 and
-' 42 when the feed arrived at 0.49 m/s. If the feed speed changes again,
-' these must be re-measured from a precontact line's flightFrames, or every
-' sweep will silently test the wrong part of the timing window.
-Const VAL_CONTACT_FRAME_UP   = 20   ' flipper raised (drop catch)
-Const VAL_CONTACT_FRAME_DOWN = 24   ' flipper at rest (live catch, dead bounce)
+' Contact times in SIMULATION milliseconds, measured from a precontact line's
+' flightMs. These were frame counts until an external review pointed out that
+' the counter advances per RENDERED frame, so the actuation point they
+' defined moved with display rate: a "20 frame" release is 333 ms at 60 fps
+' and 67 ms at 300 fps, testing a completely different part of the timing
+' window on different hardware.
+'
+' They still move with the feed: a faster ball reaches the flipper sooner. If
+' the feed speed changes, re-measure these from flightMs.
+Const VAL_CONTACT_MS_UP   = 170   ' flipper raised (drop catch)
+Const VAL_CONTACT_MS_DOWN = 205   ' flipper at rest (live catch, dead bounce)
 
-' The sweep must extend well before contact, because the flipper takes several
-' frames to actually fall after release.
-Const VAL_SWEEP_MIN = -16
-Const VAL_SWEEP_MAX = 8
-Const VAL_SWEEP_STEP = 2
+' Sweep offsets, also in simulation milliseconds. The range extends well
+' before contact because the flipper takes time to actually fall after
+' release. 10 ms is roughly one frame at 90 Hz, which is about the finest
+' control a player has.
+Const VAL_SWEEP_MIN = -140
+Const VAL_SWEEP_MAX = 70
+Const VAL_SWEEP_STEP = 15
 
 ' Speed sweep, in vpu/frame. The inlane feed at ~9 was measured to bounce the
 ' ball straight off a raised flipper and away (distFromBase ~225), so the
@@ -2830,7 +2885,7 @@ Const VAL_SPEED_MAX = 34.0
 Const VAL_SPEED_STEP = 2.0
 ' That sweep produced: arrival(vpu) = 0.744 x launch(vpu) + 1.086
 
-Dim ValContactFrame
+Dim ValContactMs
 
 ReDim ValResults(63)
 ValResultCount = 0
@@ -2839,9 +2894,9 @@ Sub ValidationStart(mode, side)
     ValMode = mode
     ValSide = side
     If mode = VAL_DROP Or mode = VAL_CRADLE Or mode = VAL_SPEED Then
-        ValContactFrame = VAL_CONTACT_FRAME_UP
+        ValContactMs = VAL_CONTACT_MS_UP
     Else
-        ValContactFrame = VAL_CONTACT_FRAME_DOWN
+        ValContactMs = VAL_CONTACT_MS_DOWN
     End If
     If mode = VAL_SPEED Then ValOffset = VAL_SPEED_MIN Else ValOffset = VAL_SWEEP_MIN
     ValResultCount = 0
@@ -2849,29 +2904,29 @@ Sub ValidationStart(mode, side)
     FeedOwner = "valid"
 
     DebugLog "valid", "start,mode=" & mode & ",side=" & side & _
-        ",contactFrame=" & ValContactFrame & _
+        ",contactMs=" & ValContactMs & _
         ",sweep=" & VAL_SWEEP_MIN & ".." & VAL_SWEEP_MAX & " step " & VAL_SWEEP_STEP & _
         ",physics=" & PhysicsSignature()
     ValidationLaunch
 End Sub
 
 Sub ValidationLaunch()
-    Dim pressAt, releaseAt, contactAt
-    contactAt = ValContactFrame + ValOffset
+    Dim pressAt, releaseAt, contactAt   ' all in simulation ms from launch
+    contactAt = ValContactMs + ValOffset
 
     Select Case ValMode
         Case VAL_DROP
             ' Flipper already up before the ball arrives, dropped at contact.
-            pressAt = 1 : releaseAt = contactAt
+            pressAt = 10 : releaseAt = contactAt
         Case VAL_LIVE
             ' Flipper down, raised into the ball.
             pressAt = contactAt : releaseAt = -1
         Case VAL_CRADLE
             ' Up and stays up. Offset is irrelevant; the ball should settle.
-            pressAt = 1 : releaseAt = -1
+            pressAt = 10 : releaseAt = -1
         Case VAL_SPEED
             ' Up and stays up; the sweep axis is launch speed.
-            pressAt = 1 : releaseAt = -1
+            pressAt = 10 : releaseAt = -1
             FeedSpeedOverride = ValOffset
         Case Else   ' VAL_DEAD
             pressAt = -1 : releaseAt = -1
@@ -3138,9 +3193,9 @@ Const DRILL_CRADLE     = 2
 
 Dim DrillActive, DrillId, DrillSide, DrillDifficulty
 Dim DrillAttempt, DrillTotal, DrillSuccess, DrillLastVerdict
-Dim DrillWaitFrames
+Dim DrillWaitUntil
 DrillActive = False : DrillAttempt = 0 : DrillSuccess = 0
-DrillLastVerdict = -1 : DrillWaitFrames = -1
+DrillLastVerdict = -1 : DrillWaitUntil = -1
 
 Function DrillName(d)
     Select Case d
@@ -3195,6 +3250,9 @@ Sub StartDrill(aDrill, aSide, aDifficulty, aAttempts)
     DrillSuccess = 0
     DrillLastVerdict = -1
     DrillActive = True
+    ' Cancel any countdown left over from a previous set, or pressing R late
+    ' in a reset delay starts attempt 1 and then immediately replaces it.
+    DrillWaitUntil = -1
     FeedOwner = "drill"
 
     ' Header row, so a session log can always be traced back to the physics
@@ -3210,7 +3268,7 @@ End Sub
 Sub EndDrill()
     DrillActive = False
     FeedOwner = ""
-    DrillWaitFrames = -1
+    DrillWaitUntil = -1
     DebugLog "drill", "end," & DrillName(DrillId) & ",side=" & SideName(DrillSide) & _
         ",attempts=" & DrillAttempt & ",success=" & DrillSuccess & _
         ",accuracy=" & DrillAccuracy() & "%"
@@ -3272,27 +3330,25 @@ Sub DrillAttemptComplete()
 
     UpdateTrainingDisplay
 
-    ' Pause long enough to read the verdict, then go again. Counted in frames
-    ' for the same reason the feeder's windows are.
-    DrillWaitFrames = OptResetDelayFrames()
+    ' Pause long enough to read the verdict, then go again, in simulation ms.
+    DrillWaitUntil = GameTime + OptResetDelayMsValue()
 End Sub
 
-' Converts the menu's reset delay into frames. 90 Hz is the VR target and the
-' worst case for a frame-counted delay feeling short.
-Function OptResetDelayFrames()
-    Dim ms
-    If OptionsReady Then ms = OptResetDelayMs Else ms = DEFAULT_RESET_DELAY_MS
-    OptResetDelayFrames = Int(ms * 90 / 1000)
+Function OptResetDelayMsValue()
+    If OptionsReady Then
+        OptResetDelayMsValue = OptResetDelayMs
+    Else
+        OptResetDelayMsValue = DEFAULT_RESET_DELAY_MS
+    End If
 End Function
 
 ' Ticked once per rendered frame from the physics timer.
 Sub DrillTick()
     If Not DrillActive Then Exit Sub
-    If DrillWaitFrames < 0 Then Exit Sub
+    If DrillWaitUntil < 0 Then Exit Sub
 
-    DrillWaitFrames = DrillWaitFrames - 1
-    If DrillWaitFrames <= 0 Then
-        DrillWaitFrames = -1
+    If GameTime >= DrillWaitUntil Then
+        DrillWaitUntil = -1
         NextAttempt
     End If
 End Sub
