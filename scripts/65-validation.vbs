@@ -43,7 +43,7 @@ Const VAL_SPEED    = 5   ' flipper held up; sweep FEED SPEED, not timing
 Dim ValMode      : ValMode = VAL_NONE
 Dim ValSide      : ValSide = SIDE_RIGHT
 Dim ValOffset, ValOffsetMin, ValOffsetMax
-Dim ValResults, ValResultCount
+Dim ValResults, ValResultCount, ValDrained
 Dim ValAngleAtContact
 
 ' Contact frame depends on where the flipper is, and getting this wrong makes
@@ -54,21 +54,27 @@ Dim ValAngleAtContact
 ' and intercepts the ball eight frames earlier, at about frame 34. Measured,
 ' not assumed: a first sweep centred on 43 put every single release after
 ' contact had already happened, and reported a perfectly flat response.
-Const VAL_CONTACT_FRAME_UP   = 34   ' flipper raised (drop catch, cradle)
-Const VAL_CONTACT_FRAME_DOWN = 42   ' flipper at rest (live catch, dead bounce)
+' Re-measured after the feed was calibrated to 0.808 m/s. A faster ball
+' reaches the flipper sooner, so these move with the feed: they were 34 and
+' 42 when the feed arrived at 0.49 m/s. If the feed speed changes again,
+' these must be re-measured from a precontact line's flightFrames, or every
+' sweep will silently test the wrong part of the timing window.
+Const VAL_CONTACT_FRAME_UP   = 20   ' flipper raised (drop catch)
+Const VAL_CONTACT_FRAME_DOWN = 24   ' flipper at rest (live catch, dead bounce)
 
 ' The sweep must extend well before contact, because the flipper takes several
 ' frames to actually fall after release.
-Const VAL_SWEEP_MIN = -24
+Const VAL_SWEEP_MIN = -16
 Const VAL_SWEEP_MAX = 8
 Const VAL_SWEEP_STEP = 2
 
 ' Speed sweep, in vpu/frame. The inlane feed at ~9 was measured to bounce the
 ' ball straight off a raised flipper and away (distFromBase ~225), so the
 ' question is at what speed it starts to settle instead.
-Const VAL_SPEED_MIN = 3.0
-Const VAL_SPEED_MAX = 11.0
-Const VAL_SPEED_STEP = 0.5
+Const VAL_SPEED_MIN = 4.0
+Const VAL_SPEED_MAX = 34.0
+Const VAL_SPEED_STEP = 2.0
+' That sweep produced: arrival(vpu) = 0.744 x launch(vpu) + 1.086
 
 Dim ValContactFrame
 
@@ -85,6 +91,7 @@ Sub ValidationStart(mode, side)
     End If
     If mode = VAL_SPEED Then ValOffset = VAL_SPEED_MIN Else ValOffset = VAL_SWEEP_MIN
     ValResultCount = 0
+    ValDrained = 0
     FeedOwner = "valid"
 
     DebugLog "valid", "start,mode=" & mode & ",side=" & side & _
@@ -128,7 +135,14 @@ End Sub
 Sub ValidationStep()
     Dim retained, outSpeed
 
-    If FeedInSpeed > 0 And Not (FeedBallObj Is Nothing) Then
+    ' A drained attempt has no meaningful retained ratio: the feeder reports
+    ' control speed -1, which averaged into the statistics as a NEGATIVE
+    ' retained value and dragged the reported minimum below zero. Count it
+    ' separately instead of pretending it is a measurement.
+    If FeedControlSpeed < 0 Then
+        ValDrained = ValDrained + 1
+        DebugLog "valid", "sample,mode=" & ValMode & ",offset=" & ValOffset & ",DRAINED"
+    ElseIf FeedInSpeed > 0 And Not (FeedBallObj Is Nothing) Then
         ' Judge on the CONTROL sample, not the rebound. A catch is measured by
         ' how little speed the ball has once things have settled, not by how
         ' it left the collision.
@@ -188,7 +202,7 @@ Sub ValidationReport()
     FeedOwner = ""
 
     If ValResultCount = 0 Then
-        DebugLog "valid", "report,NO SAMPLES"
+        DebugLog "valid", "report,NO SAMPLES,drained=" & ValDrained
         Exit Sub
     End If
 
@@ -204,6 +218,7 @@ Sub ValidationReport()
     ' the same retained energy, timing does not matter, and the drill this
     ' would feed is not training anything.
     DebugLog "valid", "report,mode=" & ValMode & ",n=" & ValResultCount & _
+        ",drained=" & ValDrained & _
         ",retainedMin=" & Round(lo, 4) & ",retainedMax=" & Round(hi, 4) & _
         ",retainedMean=" & Round(mean, 4) & _
         ",discrimination=" & Round(hi - lo, 4)

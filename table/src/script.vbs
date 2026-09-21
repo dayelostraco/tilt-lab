@@ -2100,6 +2100,41 @@ End Function
 ' earlier guess of x=690 for the right feed put the ball inside the slingshot,
 ' where it wedged and never reached the flipper.
 '
+' --- How the launch SPEED was chosen --------------------------------------
+'
+' Not by feel. VPX's documented scale (1 vpu = 0.53975 mm, 1 VPT = 10 ms, so
+' 1 vpu = 0.053975 m/s) makes every speed here a real one, and the rolling
+' model was checked against theory to 1.5%, so arrival speeds can be
+' predicted rather than guessed.
+'
+' A ball rolling from rest down this 6-degree playfield arrives at the
+' flipper at:
+'
+'     from the inlane entrance   0.42 m/s     (7.7 vpu)
+'     from the slingshot top     0.50 m/s     (9.3 vpu)
+'     from the lower playfield   0.68 m/s    (12.7 vpu)
+'     from mid playfield         0.79 m/s    (14.6 vpu)
+'     from the upper playfield   0.97 m/s    (18.0 vpu)
+'     the full table length      1.12 m/s    (20.8 vpu)
+'
+' For scale at the fast end, the slingshots on the VPW reference tables are
+' set to forces of 42 to 66, and the code applies at most half of that as
+' velocity, so a sling kick adds 1.1 to 1.8 m/s on its own.
+'
+' The original feed arrived at 0.49 m/s, which is what a ball that entered
+' the inlane essentially at rest would do: slower than anything coming off
+' the playfield proper, and not the "realistic moderate-speed return" the
+' drop-catch drill is supposed to present.
+'
+' A launch-speed sweep measured the actual relationship on this table:
+'
+'     arrival(vpu) = 0.744 x launch(vpu) + 1.086     (R ~ 1, 16 points)
+'
+' The ball loses about a quarter of its launch speed to the inlane wall on
+' the way down, which is why the launch figure is so much higher than the
+' arrival. Solving for 0.80 m/s at contact, roughly a mid-playfield return,
+' gives a launch of 21 vpu.
+'
 ' Target geometry for the right flipper:
 '   flipper centre   (595.87, 1803.27), length 114, raised angle -70 deg
 '   raised tip       (488.7, 1764.3)
@@ -2115,8 +2150,10 @@ Sub InitFeedProfiles()
     Set p = New FeedProfile
     p.Name = "DropCatch.Right"
     ' In the right inlane, just below the trigger, rolling down it.
-    p.LaunchX = 743 : p.LaunchY = 1600
-    p.VelX = -1.0   : p.VelY = 10.0
+    ' Launch speed 21.0 vpu is CALIBRATED, not chosen: see the note above
+    ' InitFeedProfiles for the derivation.
+    p.LaunchX = 743  : p.LaunchY = 1600
+    p.VelX = -2.09 : p.VelY = 20.9
     p.JitterPos = 12    ' vpu, full width
     p.JitterVel = 2.5   ' vpu/tick, full width
     p.JitterAng = 6     ' degrees, full width
@@ -2126,7 +2163,7 @@ Sub InitFeedProfiles()
     p.Name = "DropCatch.Left"
     ' In the left inlane. Its own centre, not the mirror of the right one.
     p.LaunchX = 129 : p.LaunchY = 1600
-    p.VelX = 1.0    : p.VelY = 10.0
+    p.VelX = 2.09  : p.VelY = 20.9
     p.JitterPos = 12
     p.JitterVel = 2.5
     p.JitterAng = 6
@@ -2331,20 +2368,21 @@ Sub FeederLaunch(profile, side, difficulty)
         ",speed=" & Round(spd, 3) & ",jitterScale=" & s2
 End Sub
 
-' Guarantees exactly one ball exists, creating it only when there is none.
-' Reusing a ball avoids the create/release dance on every single feed.
+' Destroys every ball and creates a fresh one.
+'
+' An earlier version reused an existing ball to skip the create/release
+' cycle. That raced the drain: when the previous attempt's ball was sitting
+' in the drain kicker, the new feed adopted it, teleported it to the launch
+' point, and then Drain_Hit destroyed it out from under the feed. Nine of
+' twenty attempts in a calibration run reported "drained, no contact" on
+' frame 1. Always starting fresh costs FEED_ARM_FRAMES and removes the race.
 Sub FeederEnsureBall()
     Dim balls, i
     balls = GetBalls
-    If UBound(balls) < 0 Then
-        Set FeedBallObj = CreateBallAt()
-    Else
-        ' Keep the first, drop any strays so a feed is never ambiguous.
-        For i = 1 To UBound(balls)
-            balls(i).DestroyBall
-        Next
-        Set FeedBallObj = balls(0)
-    End If
+    For i = 0 To UBound(balls)
+        balls(i).DestroyBall
+    Next
+    Set FeedBallObj = CreateBallAt()
 End Sub
 
 ' Teleports the (now free) ball onto the launch point and sets its velocity.
@@ -2741,7 +2779,7 @@ Const VAL_SPEED    = 5   ' flipper held up; sweep FEED SPEED, not timing
 Dim ValMode      : ValMode = VAL_NONE
 Dim ValSide      : ValSide = SIDE_RIGHT
 Dim ValOffset, ValOffsetMin, ValOffsetMax
-Dim ValResults, ValResultCount
+Dim ValResults, ValResultCount, ValDrained
 Dim ValAngleAtContact
 
 ' Contact frame depends on where the flipper is, and getting this wrong makes
@@ -2752,21 +2790,27 @@ Dim ValAngleAtContact
 ' and intercepts the ball eight frames earlier, at about frame 34. Measured,
 ' not assumed: a first sweep centred on 43 put every single release after
 ' contact had already happened, and reported a perfectly flat response.
-Const VAL_CONTACT_FRAME_UP   = 34   ' flipper raised (drop catch, cradle)
-Const VAL_CONTACT_FRAME_DOWN = 42   ' flipper at rest (live catch, dead bounce)
+' Re-measured after the feed was calibrated to 0.808 m/s. A faster ball
+' reaches the flipper sooner, so these move with the feed: they were 34 and
+' 42 when the feed arrived at 0.49 m/s. If the feed speed changes again,
+' these must be re-measured from a precontact line's flightFrames, or every
+' sweep will silently test the wrong part of the timing window.
+Const VAL_CONTACT_FRAME_UP   = 20   ' flipper raised (drop catch)
+Const VAL_CONTACT_FRAME_DOWN = 24   ' flipper at rest (live catch, dead bounce)
 
 ' The sweep must extend well before contact, because the flipper takes several
 ' frames to actually fall after release.
-Const VAL_SWEEP_MIN = -24
+Const VAL_SWEEP_MIN = -16
 Const VAL_SWEEP_MAX = 8
 Const VAL_SWEEP_STEP = 2
 
 ' Speed sweep, in vpu/frame. The inlane feed at ~9 was measured to bounce the
 ' ball straight off a raised flipper and away (distFromBase ~225), so the
 ' question is at what speed it starts to settle instead.
-Const VAL_SPEED_MIN = 3.0
-Const VAL_SPEED_MAX = 11.0
-Const VAL_SPEED_STEP = 0.5
+Const VAL_SPEED_MIN = 4.0
+Const VAL_SPEED_MAX = 34.0
+Const VAL_SPEED_STEP = 2.0
+' That sweep produced: arrival(vpu) = 0.744 x launch(vpu) + 1.086
 
 Dim ValContactFrame
 
@@ -2783,6 +2827,7 @@ Sub ValidationStart(mode, side)
     End If
     If mode = VAL_SPEED Then ValOffset = VAL_SPEED_MIN Else ValOffset = VAL_SWEEP_MIN
     ValResultCount = 0
+    ValDrained = 0
     FeedOwner = "valid"
 
     DebugLog "valid", "start,mode=" & mode & ",side=" & side & _
@@ -2826,7 +2871,14 @@ End Sub
 Sub ValidationStep()
     Dim retained, outSpeed
 
-    If FeedInSpeed > 0 And Not (FeedBallObj Is Nothing) Then
+    ' A drained attempt has no meaningful retained ratio: the feeder reports
+    ' control speed -1, which averaged into the statistics as a NEGATIVE
+    ' retained value and dragged the reported minimum below zero. Count it
+    ' separately instead of pretending it is a measurement.
+    If FeedControlSpeed < 0 Then
+        ValDrained = ValDrained + 1
+        DebugLog "valid", "sample,mode=" & ValMode & ",offset=" & ValOffset & ",DRAINED"
+    ElseIf FeedInSpeed > 0 And Not (FeedBallObj Is Nothing) Then
         ' Judge on the CONTROL sample, not the rebound. A catch is measured by
         ' how little speed the ball has once things have settled, not by how
         ' it left the collision.
@@ -2886,7 +2938,7 @@ Sub ValidationReport()
     FeedOwner = ""
 
     If ValResultCount = 0 Then
-        DebugLog "valid", "report,NO SAMPLES"
+        DebugLog "valid", "report,NO SAMPLES,drained=" & ValDrained
         Exit Sub
     End If
 
@@ -2902,6 +2954,7 @@ Sub ValidationReport()
     ' the same retained energy, timing does not matter, and the drill this
     ' would feed is not training anything.
     DebugLog "valid", "report,mode=" & ValMode & ",n=" & ValResultCount & _
+        ",drained=" & ValDrained & _
         ",retainedMin=" & Round(lo, 4) & ",retainedMax=" & Round(hi, 4) & _
         ",retainedMean=" & Round(mean, 4) & _
         ",discrimination=" & Round(hi - lo, 4)

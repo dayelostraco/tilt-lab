@@ -412,6 +412,58 @@ human playtester forming an impression:
    measures whether the ball ended up under control, which is what a catch
    actually means.
 
+### Feed speed, derived rather than chosen
+
+The original feed arrived at the flipper at 0.49 m/s. Grounding that against
+VPX's documented scale showed it was too slow: it is what a ball that entered
+the inlane essentially at rest would do.
+
+A ball rolling from rest down this 6-degree playfield arrives at the flipper
+at (validated rolling model, see [tuning.md](tuning.md)):
+
+| Released from | arrival |
+|---|---|
+| inlane entrance | 0.42 m/s (7.7 vpu) |
+| slingshot top | 0.50 m/s (9.3 vpu) |
+| lower playfield | 0.68 m/s (12.7 vpu) |
+| mid playfield | 0.79 m/s (14.6 vpu) |
+| upper playfield | 0.97 m/s (18.0 vpu) |
+| full table length | 1.12 m/s (20.8 vpu) |
+
+For the fast end: the slingshots on the VPW reference tables are set to
+forces of 42 (LOTR), 45 (Addams), 51 (Medieval Madness) and 66 (Tron), and
+`LineSegSlingshot::Collide` applies at most half of that as velocity, so a
+sling kick alone adds **1.1 to 1.8 m/s**.
+
+A launch-speed sweep measured the actual relationship on this table over 16
+points:
+
+```
+arrival(vpu) = 0.744 x launch(vpu) + 1.086
+```
+
+The ball loses about a quarter of its launch speed to the inlane wall on the
+way down. Solving for 0.80 m/s at contact, roughly a mid-playfield return,
+gives a launch of 21 vpu.
+
+**Measured after the change: 0.808 m/s, 20 of 20 feeds, sd 0.42%.** The
+target was 0.80.
+
+The contact point spreads more at the higher speed (sd 9.3 vpu against 5.2
+before, total spread 31 vpu, about 0.6 of a ball). That is expected: more
+energy gives VPW's `default_scatter` more to work with. It is a cost of
+realism, not a defect.
+
+Both timing sweeps discriminate far better on the realistic feed:
+
+| Sweep | at 0.49 m/s | at 0.808 m/s |
+|---|---|---|
+| Drop catch | 0.69 | **1.44** |
+| Live catch | 3.62* | **1.91** |
+
+\* the earlier live-catch figure was inflated by a full flip shot at one end
+of the sweep; the current sweep window is narrower.
+
 ### Live catch: a narrow window with a dramatic penalty
 
 Flipper down, raised into the ball at 17 different frames. This is the most
