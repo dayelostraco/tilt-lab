@@ -97,6 +97,11 @@ End Sub
 ' Snapshot of one ball's state. Called from drill code around the moments
 ' that matter (just before flipper contact, just after) so that trajectories
 ' can be tuned against recorded numbers instead of impressions.
+' vpu-per-VPT to metres per second, for log lines that a human has to judge.
+Function ToMS(v)
+    ToMS = Round(v * MS_PER_VPU, 3)
+End Function
+
 Sub DebugLogBall(tag, b)
     If b Is Nothing Then Exit Sub
     DebugLog "ball", tag & _

@@ -12,12 +12,47 @@ configuration layer, not a fact about the trajectory.
 
 ## Units
 
-| Quantity | Unit | Feel for the scale |
+These are VPX's documented scale, not estimates. Sources:
+`docs/PhysicsPM5.txt` and `src/physics/physconst.h` in the vpinball source.
+
+| Quantity | Unit | Conversion |
 |---|---|---|
-| Position | VPX units (vpu) | Playfield is 952.94 wide by 2164.71 tall. A 1-1/16" ball is 50 vpu across, so roughly 2.12 vpu per real millimetre. |
-| Velocity | vpu per physics tick | Hard slingshot kick ~40 to 50. Lazy inlane return ~8 to 15. |
-| Time | milliseconds | |
+| Length | vpu | **1 vpu = 0.53975 mm** exactly (1 mm = 1.8527 vpu). Playfield 952.94 x 2164.71 vpu = 514 x 1169 mm. Ball 50 vpu = 26.99 mm = 1-1/16 in. |
+| Time | VPT | **1 VPT = 10 ms.** The physics engine steps at 1000 Hz, fixed timestep. |
+| Velocity | vpu per VPT | **1 vpu = 0.053975 m/s** |
+| Gravity | vpu per VPT² | Earth's 9.81 m/s² = 1.81751. This table's 1.7629848 = 0.97 g. |
 | Angle | degrees | |
+
+> An earlier version of this table said "roughly 2.12 vpu per real
+> millimetre". That was wrong; the correct figure is 1.8527. Speeds and
+> distances in the log are now reported in m/s and mm alongside vpu so the
+> conversion does not have to be done by hand.
+
+### What the measured numbers mean in the real world
+
+| Measurement | vpu | m/s |
+|---|---|---|
+| Feed speed at flipper contact | 9.16 | **0.49** |
+| Live-catch rebound (missed window) | 54.7 | **2.95** |
+| Clean live catch, outgoing | 2.0 | 0.11 |
+| Ball resting in a cradle | 0.61 | 0.03 |
+
+### Independent check that the simulation is physically right
+
+A ball released with zero velocity slid 817 vpu (0.441 m) down the 6-degree
+playfield and reached 14.66 vpu, which is 0.791 m/s.
+
+A *sliding* frictionless block would reach 0.951 m/s. A **solid sphere
+rolling without slipping** reaches √(5/7) = 0.845 of that, which is
+0.803 m/s.
+
+Measured 0.791 against a predicted 0.803: **1.5% low**, the remainder being
+rolling resistance and the energy spent spinning the ball up.
+
+This is worth more than any single tuned constant. It says gravity, the
+slope, the playfield friction and VPX's rolling-ball model together
+reproduce textbook rigid-body dynamics, independently of anything copied
+from a reference table.
 
 Playfield slope is pinned at 6.5 degrees (see [physics.md](physics.md)).
 Every feed velocity is calibrated against that slope, so changing it

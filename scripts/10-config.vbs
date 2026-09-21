@@ -16,6 +16,11 @@
 '
 '============================================================================
 
+' Conversion factors, so measurements can be reported in real units instead
+' of leaving every reader to do the arithmetic.
+Const MM_PER_VPU = 0.53975
+Const MS_PER_VPU = 0.053975      ' metres/second per vpu-per-VPT
+
 ' --- Ball ------------------------------------------------------------------
 
 ' BallSize here is the RADIUS, matching the blank table's convention that the

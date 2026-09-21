@@ -18,6 +18,63 @@ So the rule is: **do not invent a physics model, and do not tune it to make a
 drill easier.** If a real technique is hard, the trainer should be hard. The
 target is plausible real-machine behaviour, not pleasant arcade behaviour.
 
+## 0. Sources
+
+Three different kinds of authority are used here, and it matters which is
+which.
+
+### Published documentation, shipped with VPX 10.8.1
+
+Found in the vpinball source tree under `docs/`:
+
+| Document | What it gives |
+|---|---|
+| `PhysicsPM5.txt` | The VP10 engine's own reference: parameter definitions, **1 vpu = 0.53975 mm**, 1 VPT = 10 ms, ball mass 80 g, 1000 Hz fixed timestep, gravity 1.0 = true Earth |
+| `PhysicValues.txt` | Per-element recommended values (older; superseded in places) |
+| `JP's VPX Physics 2026.pdf` + two `.vpp` presets | A current, shipped physics preset for EM and solid-state eras |
+| `Nudge Test and Calibration.vpx` | A calibration table |
+
+### Community reference implementation
+
+The nFozzy/VPW stack, taken from a real VPW release. This is **empirical
+community work**, not a specification: the polarity and velocity tables were
+data-mined by nFozzy, and the reference's own comment on the rubber curves
+says "don't take this as gospel".
+
+### First-principles cross-check
+
+One measurement stands outside both: a ball sliding down the playfield
+reproduces textbook rolling-sphere dynamics to 1.5% (see
+[tuning.md](tuning.md)). That validates gravity, slope and the rolling model
+without reference to anyone's table.
+
+### How this table's values compare to the published ones
+
+| Property | `PhysicValues.txt` | JP's 2026 SS preset | **Tilt Lab** |
+|---|---|---|---|
+| Gravity constant | 0.97 to 1.0 | 0.9 | **0.97** |
+| Playfield friction | 0.075+ | 0.25 | **0.24** |
+| Playfield elasticity | 0.25 | 0.25 | **0.25** |
+| Slope | n/a | 6 / 6 | **6 / 6** |
+| Flipper mass | 1.0 | n/a | **1.0** |
+| Flipper strength | 2200-2800 (modern) | 3600 | **3200** |
+| Flipper elasticity | 0.8 | 0.8 | **0.88** |
+| Elasticity falloff | 0.43 | 0.1 | **0.15** |
+| Flipper friction | 0.5 to 0.6 | 0.9 | **0.9** |
+| Return strength | 0.058 | 0.04 | **0.055** |
+| Coil ramp up | 2.4 to 3.5 | 0 | **2.5** |
+
+Every value sits inside the envelope spanned by the two published
+references, and several match one of them exactly. Where `PhysicValues.txt`
+and JP's 2026 preset disagree (friction 0.075 vs 0.25, strength 2200-2800 vs
+3600), this table follows the newer preset, which is also what the VPW
+tables do.
+
+**The one number to treat with suspicion is flipper `elasticity` 0.88**,
+which is above both published figures of 0.8. It comes from the VPW
+reference and is paired with their `elasticity_falloff` of 0.15 and the
+`FlippersD` dampener curve, so it should not be changed in isolation.
+
 ## 1. Reference implementation used
 
 **Lord of the Rings (Stern 2003), VPW "Yahoo! Edition"**, read from the local

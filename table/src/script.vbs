@@ -184,6 +184,11 @@ End Function
 '
 '============================================================================
 
+' Conversion factors, so measurements can be reported in real units instead
+' of leaving every reader to do the arithmetic.
+Const MM_PER_VPU = 0.53975
+Const MS_PER_VPU = 0.053975      ' metres/second per vpu-per-VPT
+
 ' --- Ball ------------------------------------------------------------------
 
 ' BallSize here is the RADIUS, matching the blank table's convention that the
@@ -2536,7 +2541,9 @@ Sub FeederUpdate()
                 DebugLog "feed", "control,seq=" & FeedSeq & _
                     ",x=" & Round(FeedBallObj.X, 1) & ",y=" & Round(FeedBallObj.Y, 1) & _
                     ",speed=" & Round(FeedControlSpeed, 3) & _
+                    ",speedMS=" & ToMS(FeedControlSpeed) & _
                     ",distFromFlipperBase=" & Round(FeedControlDist, 1) & _
+                    ",distMM=" & Round(FeedControlDist * MM_PER_VPU, 1) & _
                     ",inSpeed=" & Round(FeedInSpeed, 3) & _
                     ",killed=" & Round(1 - SafeRatio(FeedControlSpeed, FeedInSpeed), 4)
                 FeedNotifyComplete
@@ -2570,7 +2577,7 @@ Sub FeederNoteFlipperContact(flipper)
     DebugLog "feed", "precontact,seq=" & FeedSeq & _
         ",x=" & Round(FeedInX, 2) & ",y=" & Round(FeedInY, 2) & _
         ",vx=" & Round(FeedInVelX, 3) & ",vy=" & Round(FeedInVelY, 3) & _
-        ",speed=" & Round(FeedInSpeed, 3) & _
+        ",speed=" & Round(FeedInSpeed, 3) & ",speedMS=" & ToMS(FeedInSpeed) & _
         ",flipperAngle=" & Round(flipper.CurrentAngle, 2) & _
         ",flightFrames=" & FeedFrames
 End Sub
@@ -2657,6 +2664,7 @@ Sub FeederCalibrateReport()
     End If
 
     DebugLog "calib", "report,n=" & CalCount & ",misses=" & CalMiss & _
+        ",meanInSpeedMS=" & ToMS(CalSamples(0)) & _
         "," & StatLine("inSpeed", CalSamples, CalCount) & _
         "," & StatLine("contactX", CalX, CalCount) & _
         "," & StatLine("contactY", CalY, CalCount) & _
@@ -3470,6 +3478,11 @@ End Sub
 ' Snapshot of one ball's state. Called from drill code around the moments
 ' that matter (just before flipper contact, just after) so that trajectories
 ' can be tuned against recorded numbers instead of impressions.
+' vpu-per-VPT to metres per second, for log lines that a human has to judge.
+Function ToMS(v)
+    ToMS = Round(v * MS_PER_VPU, 3)
+End Function
+
 Sub DebugLogBall(tag, b)
     If b Is Nothing Then Exit Sub
     DebugLog "ball", tag & _

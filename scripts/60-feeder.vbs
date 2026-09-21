@@ -527,7 +527,9 @@ Sub FeederUpdate()
                 DebugLog "feed", "control,seq=" & FeedSeq & _
                     ",x=" & Round(FeedBallObj.X, 1) & ",y=" & Round(FeedBallObj.Y, 1) & _
                     ",speed=" & Round(FeedControlSpeed, 3) & _
+                    ",speedMS=" & ToMS(FeedControlSpeed) & _
                     ",distFromFlipperBase=" & Round(FeedControlDist, 1) & _
+                    ",distMM=" & Round(FeedControlDist * MM_PER_VPU, 1) & _
                     ",inSpeed=" & Round(FeedInSpeed, 3) & _
                     ",killed=" & Round(1 - SafeRatio(FeedControlSpeed, FeedInSpeed), 4)
                 FeedNotifyComplete
@@ -561,7 +563,7 @@ Sub FeederNoteFlipperContact(flipper)
     DebugLog "feed", "precontact,seq=" & FeedSeq & _
         ",x=" & Round(FeedInX, 2) & ",y=" & Round(FeedInY, 2) & _
         ",vx=" & Round(FeedInVelX, 3) & ",vy=" & Round(FeedInVelY, 3) & _
-        ",speed=" & Round(FeedInSpeed, 3) & _
+        ",speed=" & Round(FeedInSpeed, 3) & ",speedMS=" & ToMS(FeedInSpeed) & _
         ",flipperAngle=" & Round(flipper.CurrentAngle, 2) & _
         ",flightFrames=" & FeedFrames
 End Sub
@@ -648,6 +650,7 @@ Sub FeederCalibrateReport()
     End If
 
     DebugLog "calib", "report,n=" & CalCount & ",misses=" & CalMiss & _
+        ",meanInSpeedMS=" & ToMS(CalSamples(0)) & _
         "," & StatLine("inSpeed", CalSamples, CalCount) & _
         "," & StatLine("contactX", CalX, CalCount) & _
         "," & StatLine("contactY", CalY, CalCount) & _
