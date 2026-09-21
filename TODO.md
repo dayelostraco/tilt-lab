@@ -1,7 +1,16 @@
 # TODO
 
 Running task list. Milestones follow the project brief. Substantive work is
-also tracked in the Linear project **Tilt Lab** (SigilArk team).
+also tracked in the Linear project
+[**Tilt Lab**](https://linear.app/sigilark/project/tilt-lab-1a7e761ac64a)
+(SigilArk team).
+
+| Milestone | Linear |
+|---|---|
+| 1 Project bootstrap | [SIG-45](https://linear.app/sigilark/issue/SIG-45) |
+| 2 Physics and lower playfield | [SIG-46](https://linear.app/sigilark/issue/SIG-46) |
+| 3 Repeatable ball feeder | [SIG-47](https://linear.app/sigilark/issue/SIG-47) |
+| 4 Drop catch MVP (V0.1) | [SIG-48](https://linear.app/sigilark/issue/SIG-48) |
 
 ## Milestone 1: project bootstrap
 
