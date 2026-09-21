@@ -21,17 +21,17 @@ Sub Table1_KeyDown(ByVal keycode)
 		PlaySound "plungerpull",0,1,AudioPan(Plunger),0.25,0,0,1,AudioFade(Plunger)
 	End If
 
-	' RotateToEnd is deliberately NOT called directly. FlipperActivate is the
-	' VPW entry point: it drives the EOS torque, coil ramp-up and flipper-trick
-	' state that the nFozzy corrections depend on. Bypassing it silently
-	' disables half the physics stack.
+	' FlipperUp / FlipperDown, never RotateToEnd directly. They pair VPW's
+	' physics setup with the rotation that VPW itself leaves to PinMAME.
+	' Calling RotateToEnd alone silently disables half the correction stack;
+	' calling FlipperActivate alone does not move the flipper at all.
 	If keycode = LeftFlipperKey Then
-		FlipperActivate LeftFlipper, LFPress
+		FlipperUp SIDE_LEFT
 		PlaySound SoundFX("fx_flipperup",DOFFlippers), 0, .67, AudioPan(LeftFlipper), 0.05,0,0,1,AudioFade(LeftFlipper)
 	End If
 
 	If keycode = RightFlipperKey Then
-		FlipperActivate RightFlipper, RFPress
+		FlipperUp SIDE_RIGHT
 		PlaySound SoundFX("fx_flipperup",DOFFlippers), 0, .67, AudioPan(RightFlipper), 0.05,0,0,1,AudioFade(RightFlipper)
 	End If
 
@@ -57,12 +57,12 @@ Sub Table1_KeyUp(ByVal keycode)
 	End If
 
 	If keycode = LeftFlipperKey Then
-		FlipperDeactivate LeftFlipper, LFPress
+		FlipperDown SIDE_LEFT
 		PlaySound SoundFX("fx_flipperdown",DOFFlippers), 0, 1, AudioPan(LeftFlipper), 0.05,0,0,1,AudioFade(LeftFlipper)
 	End If
 
 	If keycode = RightFlipperKey Then
-		FlipperDeactivate RightFlipper, RFPress
+		FlipperDown SIDE_RIGHT
 		PlaySound SoundFX("fx_flipperdown",DOFFlippers), 0, 1, AudioPan(RightFlipper), 0.05,0,0,1,AudioFade(RightFlipper)
 	End If
 End Sub

@@ -125,7 +125,8 @@ InitFeedProfiles
 Const FEED_IDLE     = 0
 Const FEED_ARMING   = 4   ' ball created, waiting for the kicker to release it
 Const FEED_INFLIGHT = 1   ' launched, not yet near the flipper
-Const FEED_CONTACT  = 2   ' the flipper has been hit; reading the outcome
+Const FEED_CONTACT  = 2   ' the flipper has been hit; reading the rebound
+Const FEED_CONTROL  = 5   ' rebound read; waiting to see if it settled
 Const FEED_SETTLING = 3   ' contact happened, waiting to read the outcome
 
 ' The trainer, not the table's trough, decides when a ball exists. Without
@@ -165,14 +166,41 @@ Const FEED_ARM_FRAMES = 8
 ' enough that the reading is still about the interaction.
 Const FEED_SETTLE_FRAMES = 3
 
+' A second, later sample. Three frames after contact measures the REBOUND:
+' how much speed survived the collision itself. That is the right number for
+' a dead bounce, and the wrong one for a catch.
+'
+' A catch is not "did the ball leave slowly", it is "did the ball end up under
+' control". That needs looking well after the interaction, once the ball has
+' either settled onto the flipper or run away from it. Both numbers are
+' recorded because the drills need different ones.
+Const FEED_CONTROL_FRAMES = 45
+
 Dim FeedState      : FeedState = FEED_IDLE
 Dim FeedSide       : FeedSide = SIDE_RIGHT
 Dim FeedBallObj    : Set FeedBallObj = Nothing
 Dim FeedLaunchedAt, FeedContactAt
 Dim FeedInSpeed, FeedInVelX, FeedInVelY, FeedInX, FeedInY
+Dim FeedReboundSpeed, FeedControlSpeed, FeedControlDist
 Dim PrevX, PrevY, PrevVX, PrevVY, PrevSpeed, PrevValid
 PrevValid = False
 Dim FeedSeq        : FeedSeq = 0
+
+' Who gets told when a feed finishes: "calib", "valid", or "" for nobody.
+' A feed always reports to exactly one owner, so a calibration run and a
+' validation sweep can never interleave and corrupt each other's samples.
+Dim FeedOwner : FeedOwner = ""
+
+' Flipper actuation scheduled relative to launch, in physics frames.
+' -1 means "do nothing". This is what lets a drill or a validation sweep
+' press and release the flipper at a repeatable moment without a human.
+Dim FeedPressAtFrame, FeedReleaseAtFrame
+FeedPressAtFrame = -1 : FeedReleaseAtFrame = -1
+
+' Optional override of the profile's launch speed, for calibration sweeps.
+' 0 means "use the profile". Kept out of the profile itself so a sweep can
+' never accidentally become the committed value.
+Dim FeedSpeedOverride : FeedSpeedOverride = 0
 Dim FeedFrames     : FeedFrames = 0
 Dim FeedArmFrames  : FeedArmFrames = 0
 Dim PendX, PendY, PendZ, PendVX, PendVY, PendVZ, PendName
@@ -230,6 +258,7 @@ Sub FeederLaunch(profile, side, difficulty)
     ' feed stays on a physically plausible trajectory family instead of
     ' drifting into directions the profile never intended.
     spd = Sqr(profile.VelX * profile.VelX + profile.VelY * profile.VelY) + jv
+    If FeedSpeedOverride > 0 Then spd = FeedSpeedOverride
     ang = Atn2(profile.VelY, profile.VelX) + Radians(ja)
 
     PendName = profile.Name
@@ -280,6 +309,30 @@ Sub FeederPlaceAndRelease()
     FeedInSpeed = 0
     PrevValid = False
     FeedState = FEED_INFLIGHT
+End Sub
+
+' Schedules flipper actuation for the feed about to be launched.
+'   pressAt   frame (from launch) to raise the target flipper, -1 for never
+'   releaseAt frame to drop it again, -1 for never
+' A drop catch is press at 0 (already up before the ball arrives) and release
+' at contact; a live catch is press at contact with no release.
+Sub FeedScheduleFlipper(pressAt, releaseAt)
+    FeedPressAtFrame = pressAt
+    FeedReleaseAtFrame = releaseAt
+End Sub
+
+Sub FeedActuate()
+    Dim flip
+    Set flip = FeedTargetFlipper()
+    If FeedFrames = FeedPressAtFrame Then
+        FlipperUp FeedSide
+        DebugLog "act", "press,seq=" & FeedSeq & ",f=" & FeedFrames
+    End If
+    If FeedFrames = FeedReleaseAtFrame Then
+        FlipperDown FeedSide
+        DebugLog "act", "release,seq=" & FeedSeq & ",f=" & FeedFrames & _
+            ",angle=" & Round(flip.CurrentAngle, 2)
+    End If
 End Sub
 
 ' VPX has no "create a ball at an arbitrary point" call; a ball is born from a
@@ -348,6 +401,7 @@ Sub FeederUpdate()
 
         Case FEED_INFLIGHT
             FeedFrames = FeedFrames + 1
+            FeedActuate
 
             If (FeedFrames Mod FEED_TRACE_EVERY) = 0 Then
                 DebugLog "feed", "trace,seq=" & FeedSeq & ",f=" & FeedFrames & _
@@ -362,7 +416,7 @@ Sub FeederUpdate()
             If UBound(GetBalls) < 0 Then
                 DebugLog "feed", "drained,seq=" & FeedSeq & ",noContact,f=" & FeedFrames
                 FeedState = FEED_SETTLING
-                FeederCalibrateStep
+                FeedNotifyComplete
                 Exit Sub
             End If
 
@@ -371,7 +425,7 @@ Sub FeederUpdate()
                     ",lastX=" & Round(FeedBallObj.X, 1) & ",lastY=" & Round(FeedBallObj.Y, 1) & _
                     ",speed=" & Round(spd, 2) & ",balls=" & (UBound(GetBalls) + 1)
                 FeedState = FEED_SETTLING
-                FeederCalibrateStep
+                FeedNotifyComplete
                 Exit Sub
             End If
 
@@ -383,18 +437,54 @@ Sub FeederUpdate()
 
         Case FEED_CONTACT
             FeedFrames = FeedFrames + 1
+            FeedActuate
             If FeedFrames - FeedContactAt >= FEED_SETTLE_FRAMES Then
-                FeedState = FEED_SETTLING
-                DebugLog "feed", "postcontact,seq=" & FeedSeq & _
+                FeedReboundSpeed = spd
+                FeedState = FEED_CONTROL
+                DebugLog "feed", "rebound,seq=" & FeedSeq & _
                     ",x=" & Round(FeedBallObj.X, 2) & ",y=" & Round(FeedBallObj.Y, 2) & _
                     ",vx=" & Round(FeedBallObj.VelX, 3) & ",vy=" & Round(FeedBallObj.VelY, 3) & _
                     ",speed=" & Round(spd, 3) & _
                     ",inSpeed=" & Round(FeedInSpeed, 3) & _
                     ",retained=" & Round(SafeRatio(spd, FeedInSpeed), 4) & _
                     ",flipperAngle=" & Round(flip.CurrentAngle, 2)
-                FeederCalibrateStep
             End If
 
+        Case FEED_CONTROL
+            FeedFrames = FeedFrames + 1
+            FeedActuate
+
+            ' The ball drained while we waited: an uncontrolled outcome, and
+            ' a legitimate result for the drill to record.
+            If UBound(GetBalls) < 0 Then
+                FeedControlSpeed = -1 : FeedControlDist = -1
+                DebugLog "feed", "control,seq=" & FeedSeq & ",DRAINED"
+                FeedState = FEED_SETTLING
+                FeedNotifyComplete
+                Exit Sub
+            End If
+
+            If FeedFrames - FeedContactAt >= FEED_CONTROL_FRAMES Then
+                FeedControlSpeed = spd
+                FeedControlDist = Distance(FeedBallObj.X, FeedBallObj.Y, flip.X, flip.Y)
+                FeedState = FEED_SETTLING
+                DebugLog "feed", "control,seq=" & FeedSeq & _
+                    ",x=" & Round(FeedBallObj.X, 1) & ",y=" & Round(FeedBallObj.Y, 1) & _
+                    ",speed=" & Round(FeedControlSpeed, 3) & _
+                    ",distFromFlipperBase=" & Round(FeedControlDist, 1) & _
+                    ",inSpeed=" & Round(FeedInSpeed, 3) & _
+                    ",killed=" & Round(1 - SafeRatio(FeedControlSpeed, FeedInSpeed), 4)
+                FeedNotifyComplete
+            End If
+
+    End Select
+End Sub
+
+' One exit point for a finished feed, whatever ended it.
+Sub FeedNotifyComplete()
+    Select Case FeedOwner
+        Case "calib" : FeederCalibrateStep
+        Case "valid" : ValidationStep
     End Select
 End Sub
 
@@ -409,6 +499,7 @@ Sub FeederNoteFlipperContact(flipper)
     FeedInSpeed = PrevSpeed
     FeedContactAt = FeedFrames
     FeedState = FEED_CONTACT
+    ValAngleAtContact = flipper.CurrentAngle
 
     DebugLog "feed", "precontact,seq=" & FeedSeq & _
         ",x=" & Round(FeedInX, 2) & ",y=" & Round(FeedInY, 2) & _
@@ -438,6 +529,8 @@ Sub FeederCalibrate(side, runs)
     CalRunsLeft = runs
     CalCount = 0
     CalMiss = 0
+    FeedOwner = "calib"
+    FeedScheduleFlipper -1, -1
     DebugLog "calib", "start,side=" & side & ",runs=" & runs & ",physics=" & PhysicsSignature()
     FeedDropCatchTo CalSide, DIFF_FIXED
 End Sub

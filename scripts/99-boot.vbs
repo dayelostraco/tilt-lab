@@ -54,6 +54,18 @@ Sub SelfTestTick()
         ' not stepping and nothing about the feeder is to blame.
         Case "probe"
             ProbeDropBall
+
+        ' Automated physics validation sweeps. See scripts/65-validation.vbs.
+        Case "valid-drop"
+            ValidationStart VAL_DROP, SIDE_RIGHT
+        Case "valid-live"
+            ValidationStart VAL_LIVE, SIDE_RIGHT
+        Case "valid-cradle"
+            ValidationStart VAL_CRADLE, SIDE_RIGHT
+        Case "valid-dead"
+            ValidationStart VAL_DEAD, SIDE_RIGHT
+        Case "valid-speed"
+            ValidationStart VAL_SPEED, SIDE_RIGHT
         Case Else
             DebugLog "selftest", "unknown mode,ignored"
     End Select

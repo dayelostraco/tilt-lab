@@ -606,17 +606,17 @@ Sub Table1_KeyDown(ByVal keycode)
 		PlaySound "plungerpull",0,1,AudioPan(Plunger),0.25,0,0,1,AudioFade(Plunger)
 	End If
 
-	' RotateToEnd is deliberately NOT called directly. FlipperActivate is the
-	' VPW entry point: it drives the EOS torque, coil ramp-up and flipper-trick
-	' state that the nFozzy corrections depend on. Bypassing it silently
-	' disables half the physics stack.
+	' FlipperUp / FlipperDown, never RotateToEnd directly. They pair VPW's
+	' physics setup with the rotation that VPW itself leaves to PinMAME.
+	' Calling RotateToEnd alone silently disables half the correction stack;
+	' calling FlipperActivate alone does not move the flipper at all.
 	If keycode = LeftFlipperKey Then
-		FlipperActivate LeftFlipper, LFPress
+		FlipperUp SIDE_LEFT
 		PlaySound SoundFX("fx_flipperup",DOFFlippers), 0, .67, AudioPan(LeftFlipper), 0.05,0,0,1,AudioFade(LeftFlipper)
 	End If
 
 	If keycode = RightFlipperKey Then
-		FlipperActivate RightFlipper, RFPress
+		FlipperUp SIDE_RIGHT
 		PlaySound SoundFX("fx_flipperup",DOFFlippers), 0, .67, AudioPan(RightFlipper), 0.05,0,0,1,AudioFade(RightFlipper)
 	End If
 
@@ -642,12 +642,12 @@ Sub Table1_KeyUp(ByVal keycode)
 	End If
 
 	If keycode = LeftFlipperKey Then
-		FlipperDeactivate LeftFlipper, LFPress
+		FlipperDown SIDE_LEFT
 		PlaySound SoundFX("fx_flipperdown",DOFFlippers), 0, 1, AudioPan(LeftFlipper), 0.05,0,0,1,AudioFade(LeftFlipper)
 	End If
 
 	If keycode = RightFlipperKey Then
-		FlipperDeactivate RightFlipper, RFPress
+		FlipperDown SIDE_RIGHT
 		PlaySound SoundFX("fx_flipperdown",DOFFlippers), 0, 1, AudioPan(RightFlipper), 0.05,0,0,1,AudioFade(RightFlipper)
 	End If
 End Sub
@@ -1634,6 +1634,42 @@ Sub PhysicsFrameTimer_Timer()
     ProbeTick
 End Sub
 
+' --- Flipper actuation -----------------------------------------------------
+'
+' VPW's FlipperActivate and FlipperDeactivate ONLY set physics parameters:
+' elasticity, EOS torque, EOS torque angle. Neither one moves the flipper.
+'
+' On the VPW tables this code came from, the movement comes from PinMAME: the
+' ROM energises the flipper solenoid and the table's Sol handler calls
+' RotateToEnd. Tilt Lab has no ROM, so nothing was rotating the flippers at
+' all, from the keyboard or from anything else. The flippers simply did not
+' work, and it was invisible until an automated timing sweep produced a
+' perfectly flat response.
+'
+' So the trainer supplies the solenoid half itself. Everything that moves a
+' flipper goes through these two, so the physics setup and the rotation can
+' never drift apart again.
+
+Sub FlipperUp(side)
+    If side = SIDE_LEFT Then
+        FlipperActivate LeftFlipper, LFPress     ' physics params first,
+        LeftFlipper.RotateToEnd                  ' then the movement
+    Else
+        FlipperActivate RightFlipper, RFPress
+        RightFlipper.RotateToEnd
+    End If
+End Sub
+
+Sub FlipperDown(side)
+    If side = SIDE_LEFT Then
+        FlipperDeactivate LeftFlipper, LFPress
+        LeftFlipper.RotateToStart
+    Else
+        FlipperDeactivate RightFlipper, RFPress
+        RightFlipper.RotateToStart
+    End If
+End Sub
+
 ' VPW requires these three call sites. Keeping them here, next to the code
 ' that needs them, rather than buried in the sound or input modules.
 
@@ -2097,7 +2133,8 @@ InitFeedProfiles
 Const FEED_IDLE     = 0
 Const FEED_ARMING   = 4   ' ball created, waiting for the kicker to release it
 Const FEED_INFLIGHT = 1   ' launched, not yet near the flipper
-Const FEED_CONTACT  = 2   ' the flipper has been hit; reading the outcome
+Const FEED_CONTACT  = 2   ' the flipper has been hit; reading the rebound
+Const FEED_CONTROL  = 5   ' rebound read; waiting to see if it settled
 Const FEED_SETTLING = 3   ' contact happened, waiting to read the outcome
 
 ' The trainer, not the table's trough, decides when a ball exists. Without
@@ -2137,14 +2174,41 @@ Const FEED_ARM_FRAMES = 8
 ' enough that the reading is still about the interaction.
 Const FEED_SETTLE_FRAMES = 3
 
+' A second, later sample. Three frames after contact measures the REBOUND:
+' how much speed survived the collision itself. That is the right number for
+' a dead bounce, and the wrong one for a catch.
+'
+' A catch is not "did the ball leave slowly", it is "did the ball end up under
+' control". That needs looking well after the interaction, once the ball has
+' either settled onto the flipper or run away from it. Both numbers are
+' recorded because the drills need different ones.
+Const FEED_CONTROL_FRAMES = 45
+
 Dim FeedState      : FeedState = FEED_IDLE
 Dim FeedSide       : FeedSide = SIDE_RIGHT
 Dim FeedBallObj    : Set FeedBallObj = Nothing
 Dim FeedLaunchedAt, FeedContactAt
 Dim FeedInSpeed, FeedInVelX, FeedInVelY, FeedInX, FeedInY
+Dim FeedReboundSpeed, FeedControlSpeed, FeedControlDist
 Dim PrevX, PrevY, PrevVX, PrevVY, PrevSpeed, PrevValid
 PrevValid = False
 Dim FeedSeq        : FeedSeq = 0
+
+' Who gets told when a feed finishes: "calib", "valid", or "" for nobody.
+' A feed always reports to exactly one owner, so a calibration run and a
+' validation sweep can never interleave and corrupt each other's samples.
+Dim FeedOwner : FeedOwner = ""
+
+' Flipper actuation scheduled relative to launch, in physics frames.
+' -1 means "do nothing". This is what lets a drill or a validation sweep
+' press and release the flipper at a repeatable moment without a human.
+Dim FeedPressAtFrame, FeedReleaseAtFrame
+FeedPressAtFrame = -1 : FeedReleaseAtFrame = -1
+
+' Optional override of the profile's launch speed, for calibration sweeps.
+' 0 means "use the profile". Kept out of the profile itself so a sweep can
+' never accidentally become the committed value.
+Dim FeedSpeedOverride : FeedSpeedOverride = 0
 Dim FeedFrames     : FeedFrames = 0
 Dim FeedArmFrames  : FeedArmFrames = 0
 Dim PendX, PendY, PendZ, PendVX, PendVY, PendVZ, PendName
@@ -2202,6 +2266,7 @@ Sub FeederLaunch(profile, side, difficulty)
     ' feed stays on a physically plausible trajectory family instead of
     ' drifting into directions the profile never intended.
     spd = Sqr(profile.VelX * profile.VelX + profile.VelY * profile.VelY) + jv
+    If FeedSpeedOverride > 0 Then spd = FeedSpeedOverride
     ang = Atn2(profile.VelY, profile.VelX) + Radians(ja)
 
     PendName = profile.Name
@@ -2252,6 +2317,30 @@ Sub FeederPlaceAndRelease()
     FeedInSpeed = 0
     PrevValid = False
     FeedState = FEED_INFLIGHT
+End Sub
+
+' Schedules flipper actuation for the feed about to be launched.
+'   pressAt   frame (from launch) to raise the target flipper, -1 for never
+'   releaseAt frame to drop it again, -1 for never
+' A drop catch is press at 0 (already up before the ball arrives) and release
+' at contact; a live catch is press at contact with no release.
+Sub FeedScheduleFlipper(pressAt, releaseAt)
+    FeedPressAtFrame = pressAt
+    FeedReleaseAtFrame = releaseAt
+End Sub
+
+Sub FeedActuate()
+    Dim flip
+    Set flip = FeedTargetFlipper()
+    If FeedFrames = FeedPressAtFrame Then
+        FlipperUp FeedSide
+        DebugLog "act", "press,seq=" & FeedSeq & ",f=" & FeedFrames
+    End If
+    If FeedFrames = FeedReleaseAtFrame Then
+        FlipperDown FeedSide
+        DebugLog "act", "release,seq=" & FeedSeq & ",f=" & FeedFrames & _
+            ",angle=" & Round(flip.CurrentAngle, 2)
+    End If
 End Sub
 
 ' VPX has no "create a ball at an arbitrary point" call; a ball is born from a
@@ -2320,6 +2409,7 @@ Sub FeederUpdate()
 
         Case FEED_INFLIGHT
             FeedFrames = FeedFrames + 1
+            FeedActuate
 
             If (FeedFrames Mod FEED_TRACE_EVERY) = 0 Then
                 DebugLog "feed", "trace,seq=" & FeedSeq & ",f=" & FeedFrames & _
@@ -2334,7 +2424,7 @@ Sub FeederUpdate()
             If UBound(GetBalls) < 0 Then
                 DebugLog "feed", "drained,seq=" & FeedSeq & ",noContact,f=" & FeedFrames
                 FeedState = FEED_SETTLING
-                FeederCalibrateStep
+                FeedNotifyComplete
                 Exit Sub
             End If
 
@@ -2343,7 +2433,7 @@ Sub FeederUpdate()
                     ",lastX=" & Round(FeedBallObj.X, 1) & ",lastY=" & Round(FeedBallObj.Y, 1) & _
                     ",speed=" & Round(spd, 2) & ",balls=" & (UBound(GetBalls) + 1)
                 FeedState = FEED_SETTLING
-                FeederCalibrateStep
+                FeedNotifyComplete
                 Exit Sub
             End If
 
@@ -2355,18 +2445,54 @@ Sub FeederUpdate()
 
         Case FEED_CONTACT
             FeedFrames = FeedFrames + 1
+            FeedActuate
             If FeedFrames - FeedContactAt >= FEED_SETTLE_FRAMES Then
-                FeedState = FEED_SETTLING
-                DebugLog "feed", "postcontact,seq=" & FeedSeq & _
+                FeedReboundSpeed = spd
+                FeedState = FEED_CONTROL
+                DebugLog "feed", "rebound,seq=" & FeedSeq & _
                     ",x=" & Round(FeedBallObj.X, 2) & ",y=" & Round(FeedBallObj.Y, 2) & _
                     ",vx=" & Round(FeedBallObj.VelX, 3) & ",vy=" & Round(FeedBallObj.VelY, 3) & _
                     ",speed=" & Round(spd, 3) & _
                     ",inSpeed=" & Round(FeedInSpeed, 3) & _
                     ",retained=" & Round(SafeRatio(spd, FeedInSpeed), 4) & _
                     ",flipperAngle=" & Round(flip.CurrentAngle, 2)
-                FeederCalibrateStep
             End If
 
+        Case FEED_CONTROL
+            FeedFrames = FeedFrames + 1
+            FeedActuate
+
+            ' The ball drained while we waited: an uncontrolled outcome, and
+            ' a legitimate result for the drill to record.
+            If UBound(GetBalls) < 0 Then
+                FeedControlSpeed = -1 : FeedControlDist = -1
+                DebugLog "feed", "control,seq=" & FeedSeq & ",DRAINED"
+                FeedState = FEED_SETTLING
+                FeedNotifyComplete
+                Exit Sub
+            End If
+
+            If FeedFrames - FeedContactAt >= FEED_CONTROL_FRAMES Then
+                FeedControlSpeed = spd
+                FeedControlDist = Distance(FeedBallObj.X, FeedBallObj.Y, flip.X, flip.Y)
+                FeedState = FEED_SETTLING
+                DebugLog "feed", "control,seq=" & FeedSeq & _
+                    ",x=" & Round(FeedBallObj.X, 1) & ",y=" & Round(FeedBallObj.Y, 1) & _
+                    ",speed=" & Round(FeedControlSpeed, 3) & _
+                    ",distFromFlipperBase=" & Round(FeedControlDist, 1) & _
+                    ",inSpeed=" & Round(FeedInSpeed, 3) & _
+                    ",killed=" & Round(1 - SafeRatio(FeedControlSpeed, FeedInSpeed), 4)
+                FeedNotifyComplete
+            End If
+
+    End Select
+End Sub
+
+' One exit point for a finished feed, whatever ended it.
+Sub FeedNotifyComplete()
+    Select Case FeedOwner
+        Case "calib" : FeederCalibrateStep
+        Case "valid" : ValidationStep
     End Select
 End Sub
 
@@ -2381,6 +2507,7 @@ Sub FeederNoteFlipperContact(flipper)
     FeedInSpeed = PrevSpeed
     FeedContactAt = FeedFrames
     FeedState = FEED_CONTACT
+    ValAngleAtContact = flipper.CurrentAngle
 
     DebugLog "feed", "precontact,seq=" & FeedSeq & _
         ",x=" & Round(FeedInX, 2) & ",y=" & Round(FeedInY, 2) & _
@@ -2410,6 +2537,8 @@ Sub FeederCalibrate(side, runs)
     CalRunsLeft = runs
     CalCount = 0
     CalMiss = 0
+    FeedOwner = "calib"
+    FeedScheduleFlipper -1, -1
     DebugLog "calib", "start,side=" & side & ",runs=" & runs & ",physics=" & PhysicsSignature()
     FeedDropCatchTo CalSide, DIFF_FIXED
 End Sub
@@ -2473,6 +2602,216 @@ Function StatLine(name, arr, n)
                "," & name & "Sd=" & Round(sd, 4) & _
                "," & name & "Spread=" & Round(hi - lo, 4)
 End Function
+
+' ---------------------------------------------------------------------------
+'  module: scripts/65-validation.vbs
+' ---------------------------------------------------------------------------
+'============================================================================
+'  ZVAL: AUTOMATED PHYSICS VALIDATION
+'============================================================================
+'
+'  The brief asks for the physics foundation to be "manually or
+'  programmatically" validated. This is the programmatic half.
+'
+'  What makes it possible: the flippers are driven through VPW's
+'  FlipperActivate / FlipperDeactivate, which the script can call, and the
+'  feeder delivers a repeatable ball. So a flipper can be actuated at an
+'  exact frame relative to launch, over and over, with the only thing
+'  changing being the timing.
+'
+'  --- Why a timing SWEEP rather than a pass/fail test ----------------------
+'
+'  The interesting question about a catch is not "does it work". It is
+'  "does timing matter". The brief is explicit that the trainer must not make
+'  every attempt succeed, and a single well-timed attempt cannot tell the
+'  difference between good physics and hidden assistance.
+'
+'  A sweep can. Vary the release frame either side of contact and read the
+'  energy retained:
+'
+'    a smooth curve with a clear minimum   physics is discriminating properly
+'    flat and low everywhere               assistance is leaking in
+'    flat and high everywhere              the catch is impossible
+'
+'  That is a machine-checkable answer to a question that otherwise needs a
+'  human with an opinion.
+'
+'  Run one from a Windows host with no keyboard:
+'      attract.ps1 valid-drop 1500 10
+'
+'============================================================================
+
+Const VAL_NONE     = 0
+Const VAL_DROP     = 1   ' flipper held up, released near contact
+Const VAL_LIVE     = 2   ' flipper down, raised near contact
+Const VAL_CRADLE   = 3   ' flipper held up throughout, ball should settle
+Const VAL_DEAD     = 4   ' flipper never touched
+Const VAL_SPEED    = 5   ' flipper held up; sweep FEED SPEED, not timing
+
+Dim ValMode      : ValMode = VAL_NONE
+Dim ValSide      : ValSide = SIDE_RIGHT
+Dim ValOffset, ValOffsetMin, ValOffsetMax
+Dim ValResults, ValResultCount
+Dim ValAngleAtContact
+
+' Contact frame depends on where the flipper is, and getting this wrong makes
+' a sweep look flat for the wrong reason.
+'
+' With the flipper DOWN the ball travels to the flipper's resting position and
+' contacts at about frame 42. With it already RAISED the flipper reaches out
+' and intercepts the ball eight frames earlier, at about frame 34. Measured,
+' not assumed: a first sweep centred on 43 put every single release after
+' contact had already happened, and reported a perfectly flat response.
+Const VAL_CONTACT_FRAME_UP   = 34   ' flipper raised (drop catch, cradle)
+Const VAL_CONTACT_FRAME_DOWN = 42   ' flipper at rest (live catch, dead bounce)
+
+' The sweep must extend well before contact, because the flipper takes several
+' frames to actually fall after release.
+Const VAL_SWEEP_MIN = -24
+Const VAL_SWEEP_MAX = 8
+Const VAL_SWEEP_STEP = 2
+
+' Speed sweep, in vpu/frame. The inlane feed at ~9 was measured to bounce the
+' ball straight off a raised flipper and away (distFromBase ~225), so the
+' question is at what speed it starts to settle instead.
+Const VAL_SPEED_MIN = 3.0
+Const VAL_SPEED_MAX = 11.0
+Const VAL_SPEED_STEP = 0.5
+
+Dim ValContactFrame
+
+ReDim ValResults(63)
+ValResultCount = 0
+
+Sub ValidationStart(mode, side)
+    ValMode = mode
+    ValSide = side
+    If mode = VAL_DROP Or mode = VAL_CRADLE Or mode = VAL_SPEED Then
+        ValContactFrame = VAL_CONTACT_FRAME_UP
+    Else
+        ValContactFrame = VAL_CONTACT_FRAME_DOWN
+    End If
+    If mode = VAL_SPEED Then ValOffset = VAL_SPEED_MIN Else ValOffset = VAL_SWEEP_MIN
+    ValResultCount = 0
+    FeedOwner = "valid"
+
+    DebugLog "valid", "start,mode=" & mode & ",side=" & side & _
+        ",contactFrame=" & ValContactFrame & _
+        ",sweep=" & VAL_SWEEP_MIN & ".." & VAL_SWEEP_MAX & " step " & VAL_SWEEP_STEP & _
+        ",physics=" & PhysicsSignature()
+    ValidationLaunch
+End Sub
+
+Sub ValidationLaunch()
+    Dim pressAt, releaseAt, contactAt
+    contactAt = ValContactFrame + ValOffset
+
+    Select Case ValMode
+        Case VAL_DROP
+            ' Flipper already up before the ball arrives, dropped at contact.
+            pressAt = 1 : releaseAt = contactAt
+        Case VAL_LIVE
+            ' Flipper down, raised into the ball.
+            pressAt = contactAt : releaseAt = -1
+        Case VAL_CRADLE
+            ' Up and stays up. Offset is irrelevant; the ball should settle.
+            pressAt = 1 : releaseAt = -1
+        Case VAL_SPEED
+            ' Up and stays up; the sweep axis is launch speed.
+            pressAt = 1 : releaseAt = -1
+            FeedSpeedOverride = ValOffset
+        Case Else   ' VAL_DEAD
+            pressAt = -1 : releaseAt = -1
+    End Select
+
+    FeedScheduleFlipper pressAt, releaseAt
+    FeedDropCatchTo ValSide, DIFF_FIXED
+End Sub
+
+' Called when a feed finishes. Records the outcome and advances the sweep.
+Sub ValidationStep()
+    Dim retained, outSpeed
+
+    If FeedInSpeed > 0 And Not (FeedBallObj Is Nothing) Then
+        ' Judge on the CONTROL sample, not the rebound. A catch is measured by
+        ' how little speed the ball has once things have settled, not by how
+        ' it left the collision.
+        outSpeed = FeedControlSpeed
+        retained = SafeRatio(outSpeed, FeedInSpeed)
+        DebugLog "valid", "sample,mode=" & ValMode & ",offset=" & ValOffset & _
+            ",inSpeed=" & Round(FeedInSpeed, 3) & _
+            ",reboundSpeed=" & Round(FeedReboundSpeed, 3) & _
+            ",controlSpeed=" & Round(outSpeed, 3) & _
+            ",distFromBase=" & Round(FeedControlDist, 1) & _
+            ",retained=" & Round(retained, 4) & _
+            ",contactX=" & Round(FeedInX, 1) & ",contactY=" & Round(FeedInY, 1) & _
+            ",angleAtContact=" & Round(ValAngleAtContact, 2) & _
+            ",angleNow=" & Round(FeedTargetFlipper().CurrentAngle, 2) & _
+            ",flightFrames=" & FeedContactAt
+        If ValResultCount <= UBound(ValResults) Then
+            ValResults(ValResultCount) = retained
+            ValResultCount = ValResultCount + 1
+        End If
+    Else
+        DebugLog "valid", "sample,mode=" & ValMode & ",offset=" & ValOffset & ",NO CONTACT"
+    End If
+
+    ' Release the flipper between attempts so the next one starts clean.
+    FlipperDown SIDE_LEFT
+    FlipperDown SIDE_RIGHT
+
+    If ValMode = VAL_SPEED Then
+        ValOffset = ValOffset + VAL_SPEED_STEP
+        If ValOffset > VAL_SPEED_MAX Then
+            FeedSpeedOverride = 0
+            ValidationReport
+            Exit Sub
+        End If
+        ValidationLaunch
+        Exit Sub
+    End If
+
+    ValOffset = ValOffset + VAL_SWEEP_STEP
+    If ValOffset > VAL_SWEEP_MAX Or ValMode = VAL_CRADLE Or ValMode = VAL_DEAD Then
+        If ValMode = VAL_CRADLE Or ValMode = VAL_DEAD Then
+            If ValResultCount >= 5 Then
+                ValidationReport
+                Exit Sub
+            End If
+            ValOffset = VAL_SWEEP_MIN     ' repeat, these have no sweep axis
+        Else
+            ValidationReport
+            Exit Sub
+        End If
+    End If
+    ValidationLaunch
+End Sub
+
+Sub ValidationReport()
+    Dim i, lo, hi, sum, mean
+    FeedOwner = ""
+
+    If ValResultCount = 0 Then
+        DebugLog "valid", "report,NO SAMPLES"
+        Exit Sub
+    End If
+
+    lo = ValResults(0) : hi = ValResults(0) : sum = 0
+    For i = 0 To ValResultCount - 1
+        sum = sum + ValResults(i)
+        If ValResults(i) < lo Then lo = ValResults(i)
+        If ValResults(i) > hi Then hi = ValResults(i)
+    Next
+    mean = sum / ValResultCount
+
+    ' The discriminating number. If the best and worst timing produce nearly
+    ' the same retained energy, timing does not matter, and the drill this
+    ' would feed is not training anything.
+    DebugLog "valid", "report,mode=" & ValMode & ",n=" & ValResultCount & _
+        ",retainedMin=" & Round(lo, 4) & ",retainedMax=" & Round(hi, 4) & _
+        ",retainedMean=" & Round(mean, 4) & _
+        ",discrimination=" & Round(hi - lo, 4)
+End Sub
 
 ' ---------------------------------------------------------------------------
 '  module: scripts/90-training-input.vbs
@@ -2718,6 +3057,18 @@ Sub SelfTestTick()
         ' not stepping and nothing about the feeder is to blame.
         Case "probe"
             ProbeDropBall
+
+        ' Automated physics validation sweeps. See scripts/65-validation.vbs.
+        Case "valid-drop"
+            ValidationStart VAL_DROP, SIDE_RIGHT
+        Case "valid-live"
+            ValidationStart VAL_LIVE, SIDE_RIGHT
+        Case "valid-cradle"
+            ValidationStart VAL_CRADLE, SIDE_RIGHT
+        Case "valid-dead"
+            ValidationStart VAL_DEAD, SIDE_RIGHT
+        Case "valid-speed"
+            ValidationStart VAL_SPEED, SIDE_RIGHT
         Case Else
             DebugLog "selftest", "unknown mode,ignored"
     End Select

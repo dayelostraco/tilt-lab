@@ -43,8 +43,19 @@ also tracked in the Linear project
       timer. VPX's audit warning is now gone.
 - [x] Static validation that every referenced table object exists (`tools/check.py`)
 - [x] Credit every ported block in ATTRIBUTION.md
-- [ ] **Run the seven validation drills in `docs/physics.md`.** Nothing in this
-      milestone has been judged by play.
+- [x] Automated validation harness (`scripts/65-validation.vbs`) with timing
+      and feed-speed sweeps
+- [x] Drop catch, cradle, dead bounce and speed sweeps run. Timing
+      discrimination 0.6945: good timing kills 71% of the ball's energy, bad
+      timing almost none. Physics responds correctly to timing.
+- [ ] **Build out the lower playfield geometry.** The sweeps show the ball
+      never settles against a raised flipper at any feed speed
+      (distFromBase >= 157 vpu always), because there are no inlane guides to
+      route it into the cradle corner. This blocks cradle, post pass and
+      cradle separation. It is a geometry problem, NOT a physics constant to
+      retune.
+- [ ] Judge whether the return speed feels realistic (needs a human)
+- [ ] Live catch sweep (`valid-live`) once geometry supports a catch
 - [ ] Populate the `dSleeves` collection once sleeve rubbers exist
 - [ ] Consider the Fleep mechanical sound set
 - [ ] Prune the unused stock asset library from `table/src/gameitems/`

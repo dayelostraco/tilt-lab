@@ -312,7 +312,84 @@ Being explicit, because the temptation to over-claim here is real:
 - **`dSleeves` is empty**, so sleeve damping is currently inactive.
 - **Nothing has been validated by play.** See below.
 
-## Validation drills
+## Validation drills: automated results, 2026-09-21
+
+The brief allows these to be validated "manually or programmatically". They
+were run programmatically: `scripts/65-validation.vbs` actuates the flippers
+at an exact frame relative to launch, over a repeatable feed, and reports the
+energy the ball retained. Run with `tools/attract.ps1 valid-drop|valid-live|
+valid-cradle|valid-dead|valid-speed`.
+
+### The headline: timing discriminates properly
+
+Drop-catch sweep, releasing the raised flipper at 17 different frames either
+side of contact:
+
+| release vs contact | speed retained |
+|---|---|
+| -24 to -12 frames (flipper fully down by contact) | 0.29 to 0.36 |
+| -10 to -2 frames (flipper mid-fall) | 0.47 to 0.78 |
+| 0 frames | 0.98 |
+| +2 to +8 frames (flipper still up) | 0.46 |
+
+**Discrimination: 0.6945.** Best timing kills 71% of the ball's energy, worst
+kills almost none. That is the answer to the question the brief actually
+cares about: the outcome depends strongly on timing, and nothing in the stack
+is forcing an attempt to succeed.
+
+For contrast, the first version of this sweep reported a discrimination of
+**0.0048**, a perfectly flat line. That was not the physics. It was three
+separate measurement faults, each of which would have been invisible to a
+human playtester forming an impression:
+
+1. **The flippers were not moving at all.** VPW's `FlipperActivate` only sets
+   physics parameters; on a ROM table PinMAME's solenoid does the rotating.
+   This table has no ROM, so nothing called `RotateToEnd`, from the keyboard
+   or anywhere else. Fixed by `FlipperUp` / `FlipperDown`.
+2. **The sweep was centred on the wrong frame.** Contact happens at frame 42
+   with the flipper down but frame 34 with it raised, because a raised
+   flipper reaches out and intercepts the ball earlier. Centred on 43, every
+   release in the sweep landed after contact had already happened.
+3. **The measurement was taken at the wrong moment.** Sampling 3 frames after
+   contact measures the rebound, not the outcome. Sampling at 45 frames
+   measures whether the ball ended up under control, which is what a catch
+   actually means.
+
+### What the other drills found
+
+| Drill | Result | Reading |
+|---|---|---|
+| Cradle (flipper held up) | retained 0.458 to 0.472, **distFromBase ~225** | Repeatable, but the ball does **not** cradle |
+| Dead bounce (flipper down) | retained 0.332 to 0.339, distFromBase ~288 | Very consistent, ball bounces away |
+| Feed-speed sweep, 3.0 to 11.0 | retained flat at ~0.46; distFromBase rises linearly 157 to 238 | Slowing the feed does not produce a cradle |
+
+### The conclusion: geometry, not constants
+
+`distFromBase` never drops below about 157 vpu at any feed speed. The ball
+always bounces off the raised flipper and leaves, instead of settling against
+it. Retained energy stays flat at ~0.46 across the whole speed range, which
+says the outcome is not speed-sensitive: it is geometric.
+
+**The physics constants are not the problem. The lower playfield is.** The
+blank table has flippers, slingshots and inlane *triggers*, but not the inlane
+guides and walls that route a returning ball into the corner between the
+flipper and the guide, which is where a cradle actually forms. Milestone 2 is
+named "physics and lower playfield" and only the first half is done.
+
+This is worth stating clearly because it inverts the obvious next move.
+Nothing here justifies touching a VPW constant, and doing so to force a
+cradle would be exactly the "tune the physics to make a drill easier" failure
+the brief warns against. The next work is geometry.
+
+### Still requiring a human
+
+- Whether a pre-contact speed of ~9.16 vpu/frame *feels* like a realistic
+  return. Repeatability is settled; realism is a judgement.
+- Post pass and multiball cradle collision, which need the cradle to work
+  first.
+- Everything in VR: scale, depth perception, comfort.
+
+## Validation drills: the manual procedure
 
 None of these can be run from macOS. Each states what to do and what would
 count as a failure.

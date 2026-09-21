@@ -691,6 +691,42 @@ Sub PhysicsFrameTimer_Timer()
     ProbeTick
 End Sub
 
+' --- Flipper actuation -----------------------------------------------------
+'
+' VPW's FlipperActivate and FlipperDeactivate ONLY set physics parameters:
+' elasticity, EOS torque, EOS torque angle. Neither one moves the flipper.
+'
+' On the VPW tables this code came from, the movement comes from PinMAME: the
+' ROM energises the flipper solenoid and the table's Sol handler calls
+' RotateToEnd. Tilt Lab has no ROM, so nothing was rotating the flippers at
+' all, from the keyboard or from anything else. The flippers simply did not
+' work, and it was invisible until an automated timing sweep produced a
+' perfectly flat response.
+'
+' So the trainer supplies the solenoid half itself. Everything that moves a
+' flipper goes through these two, so the physics setup and the rotation can
+' never drift apart again.
+
+Sub FlipperUp(side)
+    If side = SIDE_LEFT Then
+        FlipperActivate LeftFlipper, LFPress     ' physics params first,
+        LeftFlipper.RotateToEnd                  ' then the movement
+    Else
+        FlipperActivate RightFlipper, RFPress
+        RightFlipper.RotateToEnd
+    End If
+End Sub
+
+Sub FlipperDown(side)
+    If side = SIDE_LEFT Then
+        FlipperDeactivate LeftFlipper, LFPress
+        LeftFlipper.RotateToStart
+    Else
+        FlipperDeactivate RightFlipper, RFPress
+        RightFlipper.RotateToStart
+    End If
+End Sub
+
 ' VPW requires these three call sites. Keeping them here, next to the code
 ' that needs them, rather than buried in the sound or input modules.
 
