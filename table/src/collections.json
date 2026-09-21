@@ -73,5 +73,40 @@
     "fire_events": true,
     "stop_single_events": false,
     "group_elements": true
+  },
+  {
+    "name": "dPosts",
+    "items": [
+      "Pin3",
+      "Pin4"
+    ],
+    "fire_events": true,
+    "stop_single_events": false,
+    "group_elements": true
+  },
+  {
+    "name": "dSleeves",
+    "items": [],
+    "fire_events": true,
+    "stop_single_events": false,
+    "group_elements": true
+  },
+  {
+    "name": "zCol_Rubber_LSling",
+    "items": [
+      "LSling"
+    ],
+    "fire_events": true,
+    "stop_single_events": false,
+    "group_elements": true
+  },
+  {
+    "name": "zCol_Rubber_RSling",
+    "items": [
+      "RSling"
+    ],
+    "fire_events": true,
+    "stop_single_events": false,
+    "group_elements": true
   }
 ]

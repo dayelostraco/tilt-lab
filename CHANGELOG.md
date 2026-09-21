@@ -26,9 +26,22 @@ Versions track the training capability of the table, not the tooling around it.
     a headset, since it exposes no controller state to table scripts and has
     no ray-cast picking.
 
+- Milestone 2: physics foundation.
+  - Current nFozzy/VPW stack ported verbatim from the VPW Lord of the Rings
+    (Stern 2003) reference, chosen by surveying six local VPW-era tables.
+    Polarity class marked "modified 2023 by nFozzy" / "2024 by rothbauerw".
+  - Modern Stern profile: playfield friction 0.24, slope pinned 6.0, flipper
+    strength 3200, elasticity falloff 0.15, coil ramp-up 2.5, ball mass 1.0.
+  - Global Physics assertion that fails loudly at init, since a Global
+    Physics Set silently invalidates the whole correction stack.
+  - Rolling sound moved to a per-frame timer, clearing VPX's frame-pacing
+    audit warning.
+  - `tools/check.py` now verifies every table object the script references
+    actually exists, and understands one-line subs and sub parameters.
+
 ### Notes
 - No drills yet. The table boots and plays as a plain lower-playfield table.
   The full nine-drill roster is registered in the menu so the menu itself can
   be validated in VR; nothing is behind those entries until milestone 4.
-- Physics is still the stock blank-table physics; the VPW/nFozzy layer lands in
-  milestone 2.
+- The physics is in but **unvalidated by play**. Seven validation drills are
+  written up at the end of `docs/physics.md` and are the gate on milestone 2.

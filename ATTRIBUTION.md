@@ -31,26 +31,44 @@ Its script header credits:
 Those routines survive, reorganised, in `scripts/20-table-core.vbs`,
 `scripts/30-sound.vbs` and `scripts/50-ball-shadows.vbs`.
 
-## Physics reference (inspected, not yet copied)
+## Physics: nFozzy / VPW stack
 
-**Medieval Madness (Williams 1997) VPW v1.0.1** by the Visual Pinball Workshop
+**Source: Lord of the Rings (Stern 2003), VPW "Yahoo! Edition"**, by the
+Visual Pinball Workshop. Chosen as the reference because it carries the most
+current and most complete nFozzy stack of any table available locally. See
+[`docs/physics.md`](docs/physics.md) for the survey that led to that choice.
 
-- Used as a **read-only reference** for modern VPX physics conventions while
-  planning milestone 2. Its script contains the current VPW stack: nFozzy
-  flipper corrections (`FlipperPolarity`), Fleep mechanical sounds, rubber
-  dampeners, `TargetBouncer`, and the live-catch check.
-- VPW credits from its script header: Sixtoe, Tomate, Apophis, DaRDog, Mcarter,
-  ClarkKent, Bord, CainArg, Freezy, HauntFreaks, MajorDrain, Tyson171, Niwak,
-  Gedankekojote97, PinStratsDan, and testers Studlygoorite, Iaakki, Unsavory,
-  Superhac.
-- **Nothing from this table is in the repository.** Medieval Madness is
-  licensed IP; its playfield scan, models, sounds and rules are not reusable.
-  Only the physics *approach* and the published nFozzy/VPW tuning constants are
-  of interest, and those are credited individually when they land.
+The following are ported **verbatim**, with the original comments preserved
+because they carry the reasoning behind the constants:
 
-> When physics code is ported in milestone 2, each ported block gets its own
-> entry here naming the original author (nFozzy, Fleep, rothbauerw, apophis,
-> and so on) and the section tag it came from.
+| Ported into | VPW section | Original authorship |
+|---|---|---|
+| `scripts/05-math.vbs` | math helpers | VPW |
+| `scripts/40-physics-nfozzy.vbs` | `FlipperPolarity` class, polarity / velocity / Ycoef tables | **nFozzy**, modified 2023 by nFozzy, 2024 by **rothbauerw** (`ReProcessBalls`, raised-flipper backhand handling) |
+| `scripts/40-physics-nfozzy.vbs` | `FlipperTricks`, `FlipperActivate`, `FlipperDeactivate`, EOS and coil ramp-up constants | **nFozzy**, EOS torque recommendations by **rothbauerw** |
+| `scripts/40-physics-nfozzy.vbs` | `CheckLiveCatch`, `FlipperNudge`, `FlipperCradleCollision` | **rothbauerw** / VPW |
+| `scripts/40-physics-nfozzy.vbs` | flipper geometry helpers | VPW |
+| `scripts/45-physics-damping.vbs` | `Dampener`, `CoRTracker`, `RDampen`, data-mined rubber CoR curves | **nFozzy** / VPW |
+| `scripts/45-physics-damping.vbs` | `TargetBouncer` | VPW |
+
+This physics code was **not** authored for this project. It is the Visual
+Pinball Workshop's work, reused under the community's normal terms with
+credit. Tilt Lab's own contribution at this layer is limited to the profile
+selection in `scripts/12-physics-config.vbs`, the Global Physics assertion,
+the trigger placement, and the debug reporting.
+
+VPW team credits from the reference tables' script headers: Sixtoe, Tomate,
+Apophis, DaRDog, Mcarter, ClarkKent, Bord, CainArg, Freezy, HauntFreaks,
+MajorDrain, Tyson171, Niwak, Gedankekojote97, PinStratsDan, and testers
+Studlygoorite, Iaakki, Unsavory and Superhac.
+
+**No artwork, model, sound, playfield scan or rule from any reference table is
+in this repository.** Those tables are licensed IP. Only the physics code,
+which the community publishes for reuse, was taken.
+
+Also inspected as references, nothing taken: Medieval Madness (Williams 1997)
+VPW v1.0.1, The Addams Family (Bally 1992), Cirqus Voltaire (Bally 1997),
+Tron Legacy (Stern 2011), Star Trek LE (Stern 2013).
 
 ## Tooling
 

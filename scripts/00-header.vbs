@@ -15,18 +15,20 @@
 '  --- MODULE MAP -----------------------------------------------------------
 '
 '    00-header.vbs        this file: bootstrap, VR/desktop detection
+'    05-math.vbs          ZMAT  VPW math helpers
 '    10-config.vbs        ZCFG  every tunable value, in one place
+'    12-physics-config.vbs ZPHY physics profile + Global Physics assertion
 '    15-options.vbs       ZOPT  VR-navigable drill selector (Table1.Option)
 '    20-table-core.vbs    ZCOR  input, trough, slingshots, GI
 '    30-sound.vbs         ZSND  positional playback, rolling, impacts
+'    40-physics-nfozzy.vbs ZNFF nFozzy flipper corrections (VPW)
+'    45-physics-damping.vbs ZDMP rubber dampeners, TargetBouncer (VPW)
 '    50-ball-shadows.vbs  ZSHA  flipper and ball shadows
 '    90-training-input.vbs ZINP drill control keys (desktop mirror)
 '    95-debug.vbs         ZDBG  debug overlay and structured logging
 '    99-boot.vbs          ZBOO  init / exit wiring, runs last
 '
 '  Modules still to come (see TODO.md):
-'    40-physics-nfozzy    nFozzy flipper corrections           (milestone 2)
-'    45-physics-damping   rubber dampeners, target bouncer     (milestone 2)
 '    60-feeder            repeatable ball delivery subsystem   (milestone 3)
 '    70-scoring           attempt evaluation                   (milestone 4)
 '    80-drills            drill state machine                  (milestone 4)

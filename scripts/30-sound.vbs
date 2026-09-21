@@ -69,6 +69,14 @@ End Function
 '********************************************************************
 
 ' tnob (total number of balls) lives in scripts/10-config.vbs.
+'
+' Interval -1 means "once per rendered frame". The blank table shipped this
+' timer at 10 ms, which VPX's own table audit flags as being below 60 FPS and
+' as breaking frame pacing. That matters here more than on a normal table: a
+' drop catch is a timing judgement measured in a few frames, and at 90 Hz in
+' VR an 11.1 ms frame never lines up with a 10 ms tick. Modern VPW drives this
+' kind of per-frame work from a -1 timer (see Medieval Madness' FrameTimer).
+RollingTimer.Interval = -1
 ReDim rolling(tnob)
 InitRolling
 
@@ -115,9 +123,9 @@ End Sub
 ' Ball Collision Sound
 '**********************
 
-Sub OnBallBallCollision(ball1, ball2, velocity)
-	PlaySound("fx_collide"), 0, Csng(velocity) ^2 / 2000, AudioPan(ball1), 0, Pitch(ball1), 0, 0, AudioFade(ball1)
-End Sub
+' OnBallBallCollision also moved to scripts/40-physics-nfozzy.vbs, because
+' VPW's FlipperCradleCollision has to run on it. It still plays the collision
+' sound.
 
 
 
@@ -179,13 +187,10 @@ Sub RandomSoundRubber()
 	End Select
 End Sub
 
-Sub LeftFlipper_Collide(parm)
- 	RandomSoundFlipper()
-End Sub
-
-Sub RightFlipper_Collide(parm)
- 	RandomSoundFlipper()
-End Sub
+' LeftFlipper_Collide / RightFlipper_Collide now live in
+' scripts/40-physics-nfozzy.vbs: VPW requires the live-catch check and the
+' polarity reprocess to run on the same event, and a VBScript event sub can
+' only be declared once. They still call RandomSoundFlipper below.
 
 Sub RandomSoundFlipper()
 	Select Case Int(Rnd*3)+1

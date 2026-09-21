@@ -32,16 +32,21 @@ also tracked in the Linear project
 
 ## Milestone 2: physics and lower playfield
 
-- [ ] Apply VPW flipper geometry and physics values to `Flipper.*.json`
-- [ ] Apply VPW table-level physics to `gamedata.json` (friction, scatter, tilt angle)
-- [ ] Add `scripts/40-physics-nfozzy.vbs`: `FlipperPolarity` class, correction
-      triggers, polarity / velocity / Ycoef tables
-- [ ] Add `scripts/45-physics-damping.vbs`: rubber dampeners, TargetBouncer
+- [x] Survey every local VPW table and pick a reference (LOTR Stern 2003)
+- [x] Apply VPW flipper geometry and physics values to `Flipper.*.json`
+- [x] Apply VPW table-level physics to `gamedata.json` (friction, scatter, tilt angle)
+- [x] `scripts/40-physics-nfozzy.vbs`: `FlipperPolarity`, flipper tricks, EOS,
+      live catch, cradle collision, correction triggers
+- [x] `scripts/45-physics-damping.vbs`: rubber dampeners, CoR tracker, TargetBouncer
+- [x] `scripts/12-physics-config.vbs`: Modern Stern profile + Global Physics assertion
+- [x] Port the rolling sound off the 10 ms `RollingTimer` onto a per-frame
+      timer. VPX's audit warning is now gone.
+- [x] Static validation that every referenced table object exists (`tools/check.py`)
+- [x] Credit every ported block in ATTRIBUTION.md
+- [ ] **Run the seven validation drills in `docs/physics.md`.** Nothing in this
+      milestone has been judged by play.
+- [ ] Populate the `dSleeves` collection once sleeve rubbers exist
 - [ ] Consider the Fleep mechanical sound set
-- [ ] Credit every ported block in ATTRIBUTION.md as it lands
-- [ ] Port the rolling-sound code off the 10 ms `RollingTimer` onto a
-      frame-synchronised callback. VPX's audit warns it breaks frame pacing,
-      which matters for a timing trainer and collides with 90 Hz VR.
 - [ ] Prune the unused stock asset library from `table/src/gameitems/`
       (bumper caps, pegs, rulers, alternate flipper models: ~26 MB of `.obj`,
       measured at 220 MB of GPU memory by VPX's audit)

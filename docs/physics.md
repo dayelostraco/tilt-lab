@@ -2,153 +2,330 @@
 
 ## Status
 
-**Current state: stock blank-table physics. The VPW/nFozzy layer is not in
-yet.** This document records what is there now, what modern VPX physics
-actually consists of, and exactly what milestone 2 has to change.
+**Implemented, not yet validated by play.** The current VPW/nFozzy stack is
+ported in and the table loads clean on VPX 10.8.1.5436 with no script error
+and no audit warning. Nothing here has been judged by hitting a ball with it.
+The validation drills at the end of this document are the gate.
 
-## Why this matters more here than on a normal table
+## Why this layer gets disproportionate care
 
 On a themed table, flipper physics being slightly off costs some realism. On a
-trainer it invalidates the product. If the flipper does not return the ball
+trainer it invalidates the product: if the flipper does not return the ball
 the way a real one does, the player drills a timing that does not exist, and
-the practice transfers negatively. Getting this layer right is the single
-highest-value thing in the project.
+the practice transfers negatively.
 
-For the same reason, the rule is: **do not invent a physics model.** Modern
-VPX has a proven community implementation. Use it, credit it, and tune within
-it.
+So the rule is: **do not invent a physics model, and do not tune it to make a
+drill easier.** If a real technique is hard, the trainer should be hard. The
+target is plausible real-machine behaviour, not pleasant arcade behaviour.
 
-## What "modern VPX physics" means in 2026
+## 1. Reference implementation used
 
-Four separable pieces, all originally from the nFozzy / Fleep / VPW lineage:
+**Lord of the Rings (Stern 2003), VPW "Yahoo! Edition"**, read from the local
+install at `D:\Visual Pinball\Tables`.
 
-1. **nFozzy flipper corrections.** VPX's built-in flipper is geometrically
-   correct but returns the ball at angles a real flipper does not. The
-   correction wraps each flipper in a trigger and, on exit, applies two lookup
-   tables: *polarity* (a positional nudge that varies with where along the
-   flipper the ball hit) and *velocity* (a speed multiplier over the same
-   axis), plus a *Ycoef* ramp that fades the correction out away from the
-   flipper. Implemented as a `FlipperPolarity` class.
-2. **Rubber dampeners.** Post and rubber collisions in stock VPX are too
-   lively. The dampener rescales the rebound based on impact speed and angle.
-3. **TargetBouncer.** Standup targets and posts otherwise return the ball with
-   unrealistically clean energy.
-4. **Fleep mechanical sounds.** Not physics, but the audio cue for flipper
-   contact is part of how a player times a catch, so it belongs in the same
-   milestone.
+Chosen after surveying every VPW-era table available locally:
 
-## Reference implementation
+| Table | `FlipperPolarity` | polarity pts | `CheckLiveCatch` | dampeners | `FlipperCradleCollision` |
+|---|---|---|---|---|---|
+| **Lord of the Rings (Stern 2003)** | 6 | 18 | 5 | 33 | **4** |
+| The Addams Family (Bally 1992) | 6 | 17 | 5 | 31 | 3 |
+| Medieval Madness (Williams 1997) | 6 | 18 | 4 | 28 | 3 |
+| Cirqus Voltaire (Bally 1997) | 6 | 18 | 3 | 29 | 2 |
+| Tron Legacy (Stern 2011) | 3 | 15 | 3 | 17 | **0** |
+| Star Trek LE (Stern 2013) | **0** | **0** | **0** | 3 | **0** |
 
-The project has **Medieval Madness (Williams 1997) VPW v1.0.1** available
-locally as a read-only reference. Its script carries the complete current VPW
-stack, tagged by section: `ZNFF` (flipper corrections), `ZDMP` (dampeners),
-`ZBOU` (TargetBouncer), `ZFLE` (Fleep sounds), plus a live-catch check.
+Two results worth stating plainly:
 
-Nothing from that table is in this repository, and nothing of its artwork,
-models or rules ever will be. See [ATTRIBUTION.md](../ATTRIBUTION.md).
+- **Star Trek LE (Stern 2013) has no nFozzy physics at all.** It is the most
+  modern Stern in the collection and it is useless as a physics reference.
+- **Tron Legacy (Stern 2011) carries an older, partial VPW mod**: no cradle
+  collision, and `EOSTnew = 0.8`, the value rothbauerw has since superseded.
 
-**Still wanted:** the VPW *Example* / *Basic* table, which is published
-specifically as a starting point for table authors and is the cleaner source
-for these routines. It is not available locally. See
-[`reference/README.md`](../reference/README.md).
+LOTR won on being both a Stern and the most complete and most current stack.
+Its `FlipperPolarity` class is marked *"modified 2023 by nFozzy"* and
+*"modified 2024 by rothbauerw"*, the newest revision markers found anywhere
+locally.
 
-## Measured baseline: what has to change
+**The VPW Example / Basic table is still not available** and would be the
+better source, being published expressly for reuse. See
+[`reference/README.md`](../reference/README.md). It is not blocking: LOTR
+carries the same stack.
 
-Both tables use the identical standard playfield, 952.94 x 2164.71 vpu, so
-VPW's flipper coordinates and its published lookup tables transfer directly.
+## 2. nFozzy implementation
+
+The `FlipperPolarity` class as revised by nFozzy (2023) and rothbauerw (2024),
+comprising:
+
+- **Polarity correction**: a positional nudge that varies with where along the
+  flipper the ball made contact (18 interpolation points).
+- **Velocity correction**: a speed multiplier over the same axis (11 points).
+- **Ycoef**: fades the correction out with distance from the flipper.
+- **ReProcessBalls** (rothbauerw, 2024): handles flipper collisions and
+  removes the correction for backhands taken with the flipper already raised.
+
+The tables are byte-identical between LOTR and Medieval Madness, which is
+what makes them safe to reuse: they describe VPW's standard flipper, not a
+particular playfield.
+
+## 3. Global Physics: the thing that must never be switched on
+
+**This table must never use a VPX Global Physics Set.**
+
+A global set overrides the per-part values that nFozzy's corrections are
+calibrated against. The failure is silent and total: the polarity and velocity
+tables stay in place but no longer describe the flipper they are correcting,
+so every number in this document becomes fiction while remaining visible.
+
+Every VPW reference inspected agrees, and this table matches:
+
+| | table `override_physics` | `override_physics_flipper` | flipper `override_physics` |
+|---|---|---|---|
+| LOTR / MM / Tron | 0 | false | 0 |
+| **Tilt Lab** | **0** | **false** | **0** |
+
+`AssertNoGlobalPhysics` in `scripts/12-physics-config.vbs` runs at table init,
+logs the result, and raises a message box if any of the three is ever
+non-zero. It is deliberately loud: this is not a failure worth discovering
+three drills later.
+
+## 4. Why Modern Stern
+
+The trainer targets one profile for now: strong modern flippers, modern
+incline, relatively fast playfield, realistic catch and transfer difficulty.
+That is the machine most players will next stand in front of.
+
+This is a **generalised** modern-machine profile. It does not reproduce any
+specific Stern title, and no claim is made that it does. LOTR is a 2003
+Whitestar, not a Spike machine; it is the closest thing to a modern Stern with
+a current VPW stack that was available.
+
+## 5-9. The values
+
+### Ball
+
+| | Value | Source |
+|---|---|---|
+| Ball mass | **1.0** | VPW standard |
+| Ball radius | 25 vpu (50 diameter) | |
+
+Ball mass is fixed at 1.0 and is not a tuning knob. The flipper stack is
+calibrated around it, so changing it to alter perceived speed would invalidate
+every polarity and velocity point at once. If the game feels too fast, slow,
+strong or bouncy, the responsible parameter is flipper strength, elasticity
+falloff, coil ramp-up or playfield friction. Diagnose, do not shortcut.
+
+### Table
+
+| Property | Was (blank table) | Now | Source |
+|---|---|---|---|
+| `gravity` | 1.7629848 | 1.7629848 | unchanged, identical across all VPW refs |
+| `friction` | 0.075 | **0.24** | LOTR. MM 0.22, Tron 0.20 |
+| `elasticity` | 0.25 | 0.25 | unchanged |
+| `default_scatter` | 0.0 | **2.0** | all VPW refs |
+| `angle_tilt_min` / `max` | 5.0 / 10.0 | **6.0 / 6.0** | LOTR |
+| `override_physics` | 0 | 0 | unchanged |
+
+Playfield friction at 0.075 was near-frictionless and made a dead bounce
+behave nothing like a real machine. Slope is pinned equal at both ends so the
+incline cannot drift with a setting: every feed velocity the trainer will use
+is calibrated against that one number.
 
 ### Flippers
 
-| Property | blank table (current) | VPW (target) |
+Both flippers, adopted wholesale from LOTR:
+
+| Property | Was | Now |
 |---|---|---|
-| centre, left | 278.21, 1803.27 | 272.80, 1832.50 |
-| centre, right | 595.87, 1803.27 | 588.73, 1832.50 |
-| `flipper_radius_max` | 117.65 | 116.0 |
-| `base_radius` | 20.59 | 20.5 |
-| `end_radius` | 11.77 | 11.8 |
-| start / end angle | ±120.5 / ±70.0 | ±124.0 / ±75.0 |
-| `mass` | 0.7 | 1.0 |
-| `strength` | 2600 | 3000 |
-| `elasticity` | 0.8 | 0.88 |
-| `elasticity_falloff` | 0.001 | 0.15 |
-| `friction` | 0.8 | 0.9 |
-| `return` | 0.05 | 0.055 |
-| `ramp_up` | 0.0 | 2.5 |
-| `torque_damping` | 0.25 | 0.375 |
+| `flipper_radius_max` | 117.65 | **114.0** |
+| `base_radius` | 20.58875 | **20.75** |
+| `end_radius` | 11.765 | **11.5** |
+| `start_angle` | ±120.5 | **±121.0** |
+| `end_angle` | ±70.0 | ±70.0 |
+| `mass` | 0.7 | **1.0** |
+| `strength` | 2600 | **3200** |
+| `elasticity` | 0.8 | **0.88** |
+| `elasticity_falloff` | 0.001 | **0.15** |
+| `friction` | 0.8 | **0.9** |
+| `return` | 0.05 | **0.055** |
+| `ramp_up` | 0.0 | **2.5** |
+| `torque_damping` (EOS torque) | 0.25 | **0.275** |
 | `torque_damping_angle` | 6.0 | 6.0 |
 
-`elasticity_falloff` is the important one. At 0.001 the flipper returns nearly
-all the energy of a fast ball, which is precisely what makes a live catch feel
-impossible; 0.15 is what lets a hard shot be absorbed.
+`elasticity_falloff` is the single most consequential change. At 0.001 the
+flipper returned nearly all the energy of a fast ball, which is precisely what
+makes a live catch feel impossible. `ramp_up` 2.5 gives the coil a spin-up
+curve instead of instant full strength, which is the difference between a tap
+and a full flip.
 
-`ramp_up` 2.5 gives the coil a spin-up curve instead of instantaneous full
-strength, which is what makes the difference between a tap and a full flip.
+**Flipper positions were deliberately not adopted.** The slingshots, inlanes
+and drain in this table are built around the existing flipper centres, and
+moving the flippers without moving all of that would break the lower
+playfield. The centres differ from LOTR's by under 5 vpu, so the correction
+tables still apply.
 
-### Table level
+### Script-level flipper constants
 
-| Property | blank table (current) | VPW (target) |
-|---|---|---|
-| `gravity` | 1.7629848 | 1.7629848 (same) |
-| `friction` | 0.075 | 0.22 |
-| `elasticity` | 0.25 | 0.25 (same) |
-| `default_scatter` | 0.0 | 2.0 |
-| `angle_tilt_min` / `max` | 5.0 / 10.0 | 6.5 / 6.5 |
-
-Playfield `friction` at 0.075 is close to frictionless, which makes a dead
-bounce behave nothing like it does on a real machine. `default_scatter` 2.0
-adds the small random angular variation that real collisions have.
-
-Fixing tilt angle to 6.5 at both ends pins the playfield slope, which matters
-because every feed velocity is calibrated against it. A slope that varies with
-a setting would make the whole feed table meaningless.
-
-## Frame pacing: the RollingTimer warning
-
-VPX's own table audit reports:
+These live in `scripts/40-physics-nfozzy.vbs`, where VPW put them, next to the
+comments that explain them:
 
 ```
-Warning: Part 'RollingTimer' uses a timer with a very short period of 10ms,
-below a 60FPS framerate. This will likely cause stutters and the table will
-not support 'frame pacing'.
+Const FlipperCoilRampupMode = 0   '0 fast, 1 medium, 2 slow (tap passes work)
+Const EOSTnew   = 1.2             '90's and later, per rothbauerw (was 0.8)
+Const EOSAnew   = 1
+Const EOSRampup = 0
+Const EOSReturn = 0.025           'mid 90's and later
+Const SOSEM     = 0.815
+SOSRampup = 2.5                   'from FlipperCoilRampupMode 0
 ```
 
-This is inherited from the blank table and it matters more here than it would
-on a normal table. Frame pacing is what keeps the interval between rendered
-frames even, and a drop catch is a timing judgement measured in a handful of
-frames. A trainer that stutters teaches a timing that the player will not
-reproduce on a machine that does not.
+> **The brief's suggested starting values were checked against the reference
+> and two of them are wrong.** "EOS Torque 0.375" is Medieval Madness'
+> `torque_damping`, not an EOS constant, and the Stern reference uses 0.275.
+> "EOS Torque Angle / Return 0.4" matches nothing in the stack; the nearest
+> real values are `torque_damping_angle` 6.0, `EOSReturn` 0.025, and
+> `FCCDamping` 0.4 (which is cradle-collision damping, not flipper return).
+> The reference wins, per the brief's own instruction.
+>
+> The live-catch and ramp-up figures in the brief were **correct** and match
+> the reference verbatim.
 
-It also collides with VR: at 90 Hz a frame is 11.1 ms, so a 10 ms timer never
-lines up with anything.
+### 10. Live catch
 
-The fix is not simply to raise the interval. Modern VPX drives per-frame work
-from a frame-synchronised callback rather than a short timer, and the rolling
-sound code needs porting onto that rather than retuned. Doing it as part of
-milestone 2 keeps all the timing-sensitive work in one place.
-
-## Asset weight
-
-The same audit reports the cost of the unused stock asset library:
+Straight from the reference, unchanged:
 
 ```
-Total image size: 11.8 MiB in VPX file, at least 220.10 MiB in GPU memory
-Total number of faces used in primitives: 145744, needing 8.2 MiB
+Const LiveCatch        = 16     'flipper angle window
+Const LiveElasticity   = 0.45
+Const LiveDistanceMin  = 5      'vpu from flipper base
+Const LiveDistanceMax  = 114    'tip protection
+Const BaseDampen       = 0.55
 ```
 
-220 MB of GPU memory for a table with no artwork is all bumper caps, pegs,
-rulers and alternate flipper models that the trainer never shows. Pruning it
-is already on the milestone 2 list; this is the number that justifies it.
+`CheckLiveCatch` runs from `LeftFlipper_Collide` / `RightFlipper_Collide`. The
+damping scales with where on the flipper contact happened and how the timing
+landed, so good timing gives a controlled catch, imperfect timing gives
+partial energy reduction, and poor timing rebounds. There is no branch that
+forces a catch to succeed.
 
-## Milestone 2 plan
+### 11. Cradle collision
 
-1. Apply the flipper geometry and physics values above in
-   `table/src/gameitems/Flipper.*.json`.
-2. Apply the table-level values in `table/src/gamedata.json`.
-3. Add flipper correction trigger objects and the `FlipperPolarity` class as
-   `scripts/40-physics-nfozzy.vbs`, with the polarity / velocity / Ycoef
-   tables. Credit nFozzy in the module header and in ATTRIBUTION.md.
-4. Add dampeners and TargetBouncer as `scripts/45-physics-damping.vbs`.
-5. Validate on Windows against the checklist in
-   [test-procedures.md](test-procedures.md).
+`FlipperCradleCollision` with `FCCDamping = 0.4`, called from
+`OnBallBallCollision`. It filters out collisions under 0.7 velocity, then
+damps both balls only when one of them is sitting on a held flipper. This is
+what keeps two cradled balls from behaving like billiard balls, and it matters
+for the cradle-separation drill.
 
-Do not skip step 5. None of these values can be judged from macOS.
+### Rubber and posts
+
+VPW's `Dampener` class with the data-mined bounce curves, unchanged:
+
+```
+RubbersD: (0, 1.1) (3.77, 0.97) (5.76, 0.967) (15.84, 0.874) (56, 0.64)
+SleevesD: RubbersD scaled to 0.85
+FlippersD: (0, 1.1) (3.77, 0.99) (6, 0.99)
+```
+
+Driven by a `CoRTracker` on a 10 ms timer, because computing a coefficient of
+restitution needs the ball's speed from the frame *before* impact.
+
+`TargetBouncer` is enabled with factor 0.9.
+
+Collections wired: `dPosts` (Pin3, Pin4), `zCol_Rubber_LSling` (LSling),
+`zCol_Rubber_RSling` (RSling). **`dSleeves` is empty**: this table has no
+sleeve rubbers modelled yet. It gets populated when the lower playfield is
+built out properly.
+
+## Frame pacing
+
+VPX's audit originally warned:
+
+> Part 'RollingTimer' uses a timer with a very short period of 10ms, below a
+> 60FPS framerate. This will likely cause stutters and the table will not
+> support 'frame pacing'.
+
+That matters more here than on a normal table: a drop catch is a timing
+judgement measured in a handful of frames, and at 90 Hz in VR an 11.1 ms frame
+never lines up with a 10 ms tick.
+
+Fixed by moving `RollingTimer` to `Interval = -1`, which means *once per
+rendered frame*. This is the modern VPW pattern (Medieval Madness drives its
+`FrameTimer` the same way). The interval is set both in the table data and in
+script, because VPX's audit reads the stored value. **The audit is now clean.**
+
+`CorTimer` stays at 10 ms deliberately: the CoR calculation needs a fixed
+sample rate, and VPW's own comment says so.
+
+## 12. Configuration and future profiles
+
+`scripts/12-physics-config.vbs` is the single place a profile is selected:
+
+```
+Const PhysicsProfile = PHYS_MODERN_STERN
+```
+
+`PHYS_WPC`, `PHYS_SYSTEM_11` and `PHYS_CUSTOM` are reserved and deliberately
+not implemented.
+
+The config layer **does not copy** VPW's constants out of the physics modules.
+Duplicating them would let the two drift, and VPW's originals sit next to the
+comments that justify them. What the layer owns is the *selection*: which era
+VPW should behave as, plus the genuinely table-level values, and an assertion
+that the running table matches what the profile expects. VPW is already
+parameterised by era through `FlipperCoilRampupMode`, `EOSTnew` and
+`EOSReturn`; a future profile switches those rather than replacing the stack.
+
+## 13. Debugging and tuning
+
+`AssertPhysicsProfile` logs the full physics state at init: profile, slope,
+friction, gravity, flipper strength/mass/elasticity/falloff/friction, EOS rest
+and `EOSTnew`/`EOSReturn`, ramp-up and mode, all five live-catch constants,
+cradle damping, and target bouncer settings. Every value is reported as
+*expected vs actual read from the running table*, so a mismatch shows up in
+the log rather than in the feel.
+
+`PhysicsSignature()` returns a one-line summary that goes into the drill log
+header, so a training session can always be traced back to the physics it was
+recorded under.
+
+`DebugLogBall` records position, all three velocity components and planar
+speed. `TBPout` is present as VPW's dampener debug readout; set
+`RubbersD.debugOn = True` to use it.
+
+Press `D` for the overlay. See [tuning.md](tuning.md).
+
+## 14. What is approximate rather than measured
+
+Being explicit, because the temptation to over-claim here is real:
+
+- **The profile is generalised.** It is not a measured reproduction of any
+  specific machine. It is LOTR's VPW calibration, which is itself a community
+  approximation of a Stern Whitestar.
+- **Playfield friction 0.24 is inherited, not measured.** It is one table
+  author's number, within the plausible 0.15 to 0.25 band.
+- **The polarity and velocity tables are data-mined by nFozzy**, not derived
+  from first principles, and are tuned for VPW's standard flipper.
+- **Rubber CoR curves are data-mined** and the reference's own comment says
+  "don't take this as gospel".
+- **Flipper positions are this table's, not LOTR's**, differing by under
+  5 vpu. The correction tables assume VPW-standard geometry; the dimensions
+  and angles now match exactly, the absolute position does not.
+- **`dSleeves` is empty**, so sleeve damping is currently inactive.
+- **Nothing has been validated by play.** See below.
+
+## Validation drills
+
+None of these can be run from macOS. Each states what to do and what would
+count as a failure.
+
+| # | Drill | Do | Pass | Fail |
+|---|---|---|---|---|
+| 1 | **Cradle** | Let a slow ball roll onto a held flipper | Settles and stays still | Vibrates, creeps, accelerates, or sticks unnaturally |
+| 2 | **Live catch** | Flip into an incoming ball with good timing, then repeat deliberately early and late | Good timing kills most energy; mistimed is partial; badly timed rebounds | Every attempt succeeds (assistance leaking in), or none can |
+| 3 | **Drop catch** | Hold the flipper up, release as the ball lands | Well-timed absorbs most energy | Ball snaps to the flipper, or timing seems not to matter |
+| 4 | **Dead bounce** | Let a ball from the opposite inlane hit a lowered flipper | Bounces across plausibly; outcome varies with speed, angle and contact point | Always drains, or always bounces regardless of input |
+| 5 | **Post pass** | Cradle, then tap to transfer across | Possible with real timing, not trivial | Impossible, or works every time |
+| 6 | **Slingshot recovery** | Drive a ball into a sling | Lively and a bit unpredictable | Violent and arcade-like, or dead |
+| 7 | **Cradle collision** | With two balls, roll one into a cradled one | Plausible, damped | Billiard-ball energy |
+
+Log what actually happens with debug on. Adjustments must be justified against
+the reference or against observed data, never against "this drill feels hard".

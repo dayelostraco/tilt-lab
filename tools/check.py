@@ -22,6 +22,25 @@ OPENERS = {"sub": "end sub", "function": "end function", "class": "end class",
 DECL = re.compile(r"^\s*(?:Public\s+|Private\s+)?(Sub|Function|Class|Const|Dim)\s+([A-Za-z_]\w*)", re.I)
 
 
+def split_statements(code: str):
+    """Split a VBScript line on top-level colons.
+
+    `Sub X() : DoThing : End Sub` is a legal one-line sub, and treating the
+    whole line as a single statement makes the block counter think the Sub was
+    never closed. Colons inside string literals are left alone.
+    """
+    parts, buf, in_str = [], [], False
+    for ch in code:
+        if ch == '"':
+            in_str = not in_str
+        if ch == ":" and not in_str:
+            parts.append("".join(buf)); buf = []
+            continue
+        buf.append(ch)
+    parts.append("".join(buf))
+    return [p.strip() for p in parts if p.strip()]
+
+
 def strip_comment(line: str) -> str:
     """Drop a trailing VBScript comment, honouring quoted strings."""
     out, in_str = [], False
@@ -57,10 +76,11 @@ def main() -> int:
             kind, name = m.group(1).lower(), m.group(2)
             seen[name.lower()].append((n, kind))
         # track Sub/Function/Class nesting so members are not read as globals
-        if re.match(r"^\s*(?:Public\s+|Private\s+)?(Sub|Function|Class|Property)\b", code, re.I):
-            depth += 1
-        elif re.match(r"^\s*End\s+(Sub|Function|Class|Property)\b", code, re.I):
-            depth = max(0, depth - 1)
+        for st in split_statements(code):
+            if re.match(r"^(?:Public\s+|Private\s+)?(Sub|Function|Class|Property)\b", st, re.I):
+                depth += 1
+            elif re.match(r"^End\s+(Sub|Function|Class|Property)\b", st, re.I):
+                depth = max(0, depth - 1)
 
     for name, hits in sorted(seen.items()):
         if len(hits) > 1:
@@ -70,21 +90,19 @@ def main() -> int:
     # --- block balance -----------------------------------------------------
     counts = defaultdict(int)
     for raw in lines:
-        code = strip_comment(raw).strip().lower()
-        if not code:
-            continue
-        for opener, closer in OPENERS.items():
-            if re.match(rf"^(?:public\s+|private\s+)?{opener}\b", code) and not code.startswith("end "):
-                # "Select Case" opens; a bare "select" does not occur otherwise
-                counts[opener] += 1
-            if code.startswith(closer):
-                counts[opener] -= 1
-        # A block If is the only If that needs an End If: "If x Then" with
-        # nothing after Then. "If x Then y" is a one-liner and is skipped.
-        if re.match(r"^if\b.*\bthen$", code):
-            counts["if"] += 1
-        if code.startswith("end if"):
-            counts["if"] -= 1
+        for code in split_statements(strip_comment(raw).lower()):
+            for opener, closer in OPENERS.items():
+                if re.match(rf"^(?:public\s+|private\s+)?{opener}\b", code) and not code.startswith("end "):
+                    # "Select Case" opens; a bare "select" does not occur otherwise
+                    counts[opener] += 1
+                if code.startswith(closer):
+                    counts[opener] -= 1
+            # A block If is the only If that needs an End If: "If x Then" with
+            # nothing after Then. "If x Then y" is a one-liner and is skipped.
+            if re.match(r"^if\b.*\bthen$", code):
+                counts["if"] += 1
+            if code.startswith("end if"):
+                counts["if"] -= 1
 
     for block, n in sorted(counts.items()):
         if n != 0:
@@ -98,6 +116,65 @@ def main() -> int:
         before = [n for n, l in enumerate(lines[:opts[0] - 1], 1) if strip_comment(l).strip()]
         if before:
             errors.append(f"'Option Explicit' at line {opts[0]} is preceded by code at line {before[0]}")
+
+    # --- every referenced table object must exist --------------------------
+    # The ported VPW code addresses table parts by name. A missing part is a
+    # runtime error that only appears once the table is played on Windows,
+    # which is the slowest possible way to find out.
+    import json
+    gi_dir = ROOT / "table/src/gameitems"
+    parts = set()
+    if gi_dir.is_dir():
+        for f in gi_dir.glob("*.json"):
+            try:
+                for v in json.loads(f.read_text()).values():
+                    if isinstance(v, dict) and v.get("name"):
+                        parts.add(v["name"].lower())
+            except Exception:
+                pass
+    col_file = ROOT / "table/src/collections.json"
+    if col_file.is_file():
+        for c in json.loads(col_file.read_text()):
+            if c.get("name"):
+                parts.add(c["name"].lower())
+
+    # Names the script defines itself, plus VPX globals, are not table parts.
+    defined = {m.group(2).lower() for l in lines
+               for m in [DECL.match(strip_comment(l))] if m}
+    # Sub/Function parameters are locals, and VPW passes flippers and table
+    # objects into subs constantly, so without these the check is all noise.
+    PARAMS = re.compile(r"^\s*(?:Public\s+|Private\s+)?(?:Sub|Function)\s+\w+\s*\(([^)]*)\)", re.I)
+    for l in lines:
+        m = PARAMS.match(strip_comment(l))
+        if m:
+            for a in m.group(1).split(","):
+                a = a.strip().removeprefix("ByVal ").removeprefix("ByRef ").strip()
+                if a:
+                    defined.add(a.lower())
+    # Debug.Print is VBScript's own debugger object, not a table part.
+    BUILTIN = {"table1", "activeball", "controller", "vpmtimer", "err", "rnd",
+               "gbot", "me", "nothing", "true", "false", "empty", "null", "debug"}
+
+    OBJ = re.compile(r"\b([A-Za-z_]\w*)\s*\.\s*(?:[A-Za-z_]\w*)")
+    STR = re.compile(r'"[^"]*"')
+    referenced = defaultdict(list)
+    for n, raw in enumerate(lines, 1):
+        # Message text is full of things like "docs/physics.md" that look like
+        # object access. Strings cannot contain a real reference, so drop them.
+        code = STR.sub('""', strip_comment(raw))
+        for m in OBJ.finditer(code):
+            referenced[m.group(1).lower()].append(n)
+
+    for name, where in sorted(referenced.items()):
+        if name in parts or name in defined or name in BUILTIN:
+            continue
+        # Locals and class members dominate the rest; only flag names that
+        # look like table parts, i.e. that are never declared anywhere.
+        if re.search(rf"\b(?:Dim|Set|Const|Public|Private|Function|Sub|Class|For Each)\s+{re.escape(name)}\b",
+                     "\n".join(lines), re.I):
+            continue
+        warnings.append(f"line {where[0]}: '{name}' used as an object but is not "
+                        f"a table part or a declared variable")
 
     # --- tabs/spaces mix is only cosmetic, but flag stray non-ASCII ---------
     for n, raw in enumerate(lines, 1):

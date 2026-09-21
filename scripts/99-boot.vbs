@@ -13,9 +13,14 @@ Sub Table1_Init()
     DebugLog "boot", "renderingMode=" & RenderingMode & ",desktop=" & CStr(DesktopMode) & ",vr=" & CStr(VRMode)
     DebugLog "boot", "table=" & Table1.Width & "x" & Table1.Height
 
+    ' Physics integrity first: a Global Physics Set silently invalidates the
+    ' whole nFozzy stack, and everything after this point assumes it is off.
+    AssertNoGlobalPhysics
+    AssertPhysicsProfile
+
     DebugRender
 
-    DebugLog "boot", "ready"
+    DebugLog "boot", "ready,physics=" & PhysicsSignature()
 End Sub
 
 Sub Table1_Exit()
