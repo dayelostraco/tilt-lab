@@ -689,6 +689,7 @@ Sub PhysicsFrameTimer_Timer()
     FeederUpdate
     SelfTestTick
     ProbeTick
+    DrillTick
 End Sub
 
 ' --- Flipper actuation -----------------------------------------------------

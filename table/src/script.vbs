@@ -1632,6 +1632,7 @@ Sub PhysicsFrameTimer_Timer()
     FeederUpdate
     SelfTestTick
     ProbeTick
+    DrillTick
 End Sub
 
 ' --- Flipper actuation -----------------------------------------------------
@@ -2240,6 +2241,24 @@ Dim PendX, PendY, PendZ, PendVX, PendVY, PendVZ, PendName
 ' reaches the flipper can be diagnosed from the log instead of by watching.
 Const FEED_TRACE_EVERY = 30
 
+' Soft-contact fallback.
+'
+' Contact is normally taken from the flipper's Collide event, which is exact.
+' But a slow ball rolling gently onto a flipper may never generate a
+' collision at all: the cradle drill recorded five attempts with every
+' measurement zero because nothing ever fired.
+'
+' So if the ball gets within touching distance of the flipper's SURFACE and
+' is moving slowly, that counts as contact too.
+'
+' It has to be distance to the flipper's line segment, not to its pivot. A
+' pivot-based radius of 140 (length plus a ball) is satisfied by the cradle
+' feed's own launch point, which sits 109 vpu from the pivot: every attempt
+' registered contact on frame 2, before the ball had moved.
+Const FEED_SOFT_RADIUS = 42     ' ball radius 25 + flipper end radius ~12
+Const FEED_SOFT_SPEED  = 2.5
+Const FEED_SOFT_MIN_FRAMES = 10 ' never in the first frames after launch
+
 ' Give up on a feed that never arrives, so a calibration run cannot hang.
 ' Also in frames, for the same reason.
 Const FEED_TIMEOUT_FRAMES = 600
@@ -2464,6 +2483,17 @@ Sub FeederUpdate()
                 Exit Sub
             End If
 
+            ' Soft contact: close to the flipper and barely moving. Checked
+            ' before the sample rolls forward so the reading describes the
+            ' approach rather than the already-stopped ball.
+            If spd <= FEED_SOFT_SPEED And PrevValid And FeedFrames >= FEED_SOFT_MIN_FRAMES Then
+                If DistanceToFlipperSurface(FeedBallObj.X, FeedBallObj.Y, flip) <= FEED_SOFT_RADIUS Then
+                    DebugLog "feed", "softcontact,seq=" & FeedSeq & ",f=" & FeedFrames
+                    FeederNoteFlipperContact flip
+                    Exit Sub
+                End If
+            End If
+
             ' Roll the one-frame-old sample forward. This is what becomes the
             ' pre-contact reading the instant the flipper reports a hit.
             PrevX = FeedBallObj.X       : PrevY = FeedBallObj.Y
@@ -2520,6 +2550,7 @@ Sub FeedNotifyComplete()
     Select Case FeedOwner
         Case "calib" : FeederCalibrateStep
         Case "valid" : ValidationStep
+        Case "drill" : DrillAttemptComplete
     End Select
 End Sub
 
@@ -2543,6 +2574,30 @@ Sub FeederNoteFlipperContact(flipper)
         ",flipperAngle=" & Round(flipper.CurrentAngle, 2) & _
         ",flightFrames=" & FeedFrames
 End Sub
+
+' Perpendicular distance from a point to the flipper's line SEGMENT, from
+' pivot to tip at its current angle, clamped at both ends.
+'
+' VPW's DistanceFromFlipper is not this: it measures to the infinite axis
+' line, so a ball anywhere along that line reads as touching.
+Function DistanceToFlipperSurface(px, py, flip)
+    Dim ax, ay, bx, by, dx, dy, t, len2
+    ax = flip.X : ay = flip.Y
+    bx = ax + flip.Length * Sin(Radians(flip.CurrentAngle))
+    by = ay - flip.Length * Cos(Radians(flip.CurrentAngle))
+
+    dx = bx - ax : dy = by - ay
+    len2 = dx * dx + dy * dy
+    If len2 = 0 Then
+        DistanceToFlipperSurface = Distance(px, py, ax, ay)
+        Exit Function
+    End If
+
+    t = ((px - ax) * dx + (py - ay) * dy) / len2
+    If t < 0 Then t = 0
+    If t > 1 Then t = 1
+    DistanceToFlipperSurface = Distance(px, py, ax + t * dx, ay + t * dy)
+End Function
 
 Function SafeRatio(a, b)
     If b = 0 Then SafeRatio = 0 Else SafeRatio = a / b
@@ -2845,6 +2900,325 @@ Sub ValidationReport()
 End Sub
 
 ' ---------------------------------------------------------------------------
+'  module: scripts/70-scoring.vbs
+' ---------------------------------------------------------------------------
+'============================================================================
+'  ZSCR: ATTEMPT EVALUATION
+'============================================================================
+'
+'  Turns the feeder's measurements into a verdict. It reads; it never writes.
+'  Nothing in this file touches the ball, the flippers or any physics value,
+'  because a trainer that nudges an attempt toward success teaches a timing
+'  that will not survive contact with a real machine.
+'
+'  --- Where the thresholds come from ---------------------------------------
+'
+'  Measured, not guessed, from the automated validation sweeps on
+'  2026-09-21 (see docs/physics.md):
+'
+'    a settled cradle      control speed 0.605..0.740, 81 vpu from the base
+'    a clean live catch    retained 0.233, ball killed to speed 2.0
+'    a partial catch       retained 0.354
+'    a plain bounce        retained 0.46
+'    a dead bounce         retained 0.33, but 288 vpu away and still moving
+'    a flipped shot        retained 1.1 to 3.8
+'
+'  The two numbers that separate a catch from a bounce are speed AND
+'  distance. Either alone is ambiguous: a dead bounce also loses most of its
+'  speed by the time it is measured, but it is 288 vpu away by then. Control
+'  means slow AND still there.
+'
+'  --- On verdict honesty ----------------------------------------------------
+'
+'  There is deliberately no EARLY or LATE. The trainer measures what the ball
+'  did, not what the player intended, and it cannot presently distinguish
+'  "released too early" from "released too late" without inferring intent.
+'  Reporting a timing critique it cannot support would train the player to
+'  correct an error they may not have made.
+'
+'============================================================================
+
+Const VERDICT_PERFECT    = 0
+Const VERDICT_CONTROLLED = 1
+Const VERDICT_PARTIAL    = 2
+Const VERDICT_MISS       = 3
+Const VERDICT_SHOT       = 4
+Const VERDICT_DRAIN      = 5
+
+' Ball is "under control" when it is both slow and still at the flipper.
+' Cradle measured at speed 0.6 / 81 vpu; these sit just outside that.
+Const CTRL_SPEED_PERFECT = 1.2
+Const CTRL_DIST_PERFECT  = 110
+Const CTRL_SPEED_OK      = 3.0
+Const CTRL_DIST_OK       = 160
+
+' Below this fraction of incoming speed, real energy was absorbed even if the
+' ball did not end up controlled. Measured partial catch was 0.354.
+Const RETAINED_PARTIAL   = 0.60
+
+' ...but retained energy ALONE over-credits doing nothing. A ball that simply
+' dead-bounces off a lowered flipper and travels away also arrives at the
+' measurement slow, and scored PARTIAL on the first run of the drill loop
+' with no player input at all. It was 287 vpu away by then.
+'
+' So a partial catch must also still be somewhere near the flipper. Measured:
+' a real partial catch sat at 199.8 vpu, an untouched dead bounce at 287.
+Const CTRL_DIST_PARTIAL  = 240
+
+' Above this the player did not catch anything, they hit it. A flipped shot
+' measured 1.1 to 3.8.
+Const RETAINED_SHOT      = 1.05
+
+Function VerdictName(v)
+    Select Case v
+        Case VERDICT_PERFECT    : VerdictName = "PERFECT"
+        Case VERDICT_CONTROLLED : VerdictName = "CONTROLLED"
+        Case VERDICT_PARTIAL    : VerdictName = "PARTIAL"
+        Case VERDICT_MISS       : VerdictName = "MISS"
+        Case VERDICT_SHOT       : VerdictName = "SHOT"
+        Case VERDICT_DRAIN      : VerdictName = "DRAIN"
+        Case Else               : VerdictName = "?"
+    End Select
+End Function
+
+' PERFECT and CONTROLLED count as success; everything else does not.
+Function VerdictIsSuccess(v)
+    VerdictIsSuccess = (v = VERDICT_PERFECT Or v = VERDICT_CONTROLLED)
+End Function
+
+' Evaluates the attempt the feeder has just finished measuring.
+' Reads FeedInSpeed, FeedControlSpeed and FeedControlDist; writes nothing.
+Function EvaluateAttempt()
+    Dim retained
+
+    ' The feeder sets these to -1 when the ball drained before it could be
+    ' measured. A drain is an outcome, not a missing reading.
+    If FeedControlSpeed < 0 Then
+        EvaluateAttempt = VERDICT_DRAIN
+        Exit Function
+    End If
+
+    If FeedInSpeed <= 0 Then
+        ' No contact was ever recorded: the ball never reached the flipper.
+        EvaluateAttempt = VERDICT_MISS
+        Exit Function
+    End If
+
+    retained = SafeRatio(FeedControlSpeed, FeedInSpeed)
+
+    If FeedControlSpeed <= CTRL_SPEED_PERFECT And FeedControlDist <= CTRL_DIST_PERFECT Then
+        EvaluateAttempt = VERDICT_PERFECT
+    ElseIf FeedControlSpeed <= CTRL_SPEED_OK And FeedControlDist <= CTRL_DIST_OK Then
+        EvaluateAttempt = VERDICT_CONTROLLED
+    ElseIf retained >= RETAINED_SHOT Then
+        EvaluateAttempt = VERDICT_SHOT
+    ElseIf retained <= RETAINED_PARTIAL And FeedControlDist <= CTRL_DIST_PARTIAL Then
+        EvaluateAttempt = VERDICT_PARTIAL
+    Else
+        EvaluateAttempt = VERDICT_MISS
+    End If
+End Function
+
+' The full raw record behind a verdict, so thresholds can be re-tuned against
+' real sessions instead of re-guessed. This is the CSV row the brief asks for.
+Function AttemptRecord(drill, side, difficulty, attempt, verdict)
+    AttemptRecord = "drill=" & drill & ",side=" & side & _
+        ",difficulty=" & difficulty & ",attempt=" & attempt & _
+        ",inSpeed=" & Round(FeedInSpeed, 3) & _
+        ",inVx=" & Round(FeedInVelX, 3) & ",inVy=" & Round(FeedInVelY, 3) & _
+        ",contactX=" & Round(FeedInX, 1) & ",contactY=" & Round(FeedInY, 1) & _
+        ",reboundSpeed=" & Round(FeedReboundSpeed, 3) & _
+        ",controlSpeed=" & Round(FeedControlSpeed, 3) & _
+        ",controlDist=" & Round(FeedControlDist, 1) & _
+        ",retained=" & Round(SafeRatio(FeedControlSpeed, FeedInSpeed), 4) & _
+        ",outcome=" & VerdictName(verdict)
+End Function
+
+' ---------------------------------------------------------------------------
+'  module: scripts/80-drills.vbs
+' ---------------------------------------------------------------------------
+'============================================================================
+'  ZDRL: DRILL STATE MACHINE
+'============================================================================
+'
+'  A drill is: deliver a repeatable feed, let the player respond, evaluate
+'  what the ball did, record it, pause briefly, repeat. After a set number of
+'  attempts, report.
+'
+'  The drill layer chooses WHICH feed and counts the results. It does not
+'  touch physics, and it does not vary anything between attempts except what
+'  the difficulty setting asks the feeder to vary. Every drill runs on the
+'  same simulation; only the feed changes. That is what makes results from
+'  different drills comparable.
+'
+'============================================================================
+
+Const DRILL_DROP_CATCH = 0
+Const DRILL_LIVE_CATCH = 1
+Const DRILL_CRADLE     = 2
+
+Dim DrillActive, DrillId, DrillSide, DrillDifficulty
+Dim DrillAttempt, DrillTotal, DrillSuccess, DrillLastVerdict
+Dim DrillWaitFrames
+DrillActive = False : DrillAttempt = 0 : DrillSuccess = 0
+DrillLastVerdict = -1 : DrillWaitFrames = -1
+
+Function DrillName(d)
+    Select Case d
+        Case DRILL_DROP_CATCH : DrillName = "DROP CATCH"
+        Case DRILL_LIVE_CATCH : DrillName = "LIVE CATCH"
+        Case DRILL_CRADLE     : DrillName = "CRADLE"
+        Case Else             : DrillName = "DRILL " & d
+    End Select
+End Function
+
+Function SideName(s)
+    Select Case s
+        Case SIDE_LEFT        : SideName = "LEFT"
+        Case SIDE_RIGHT       : SideName = "RIGHT"
+        Case SIDE_ALTERNATING : SideName = "ALTERNATING"
+        Case Else             : SideName = "?"
+    End Select
+End Function
+
+Function DifficultyName(d)
+    Select Case d
+        Case DIFF_FIXED        : DifficultyName = "Fixed"
+        Case DIFF_BEGINNER     : DifficultyName = "Beginner"
+        Case DIFF_INTERMEDIATE : DifficultyName = "Intermediate"
+        Case DIFF_ADVANCED     : DifficultyName = "Advanced"
+        Case Else              : DifficultyName = "?"
+    End Select
+End Function
+
+Function DrillAccuracy()
+    If DrillAttempt = 0 Then
+        DrillAccuracy = 0
+    Else
+        DrillAccuracy = Int((DrillSuccess / DrillAttempt) * 100 + 0.5)
+    End If
+End Function
+
+' --- Lifecycle -------------------------------------------------------------
+
+' NOTE the parameter names. VBScript identifiers are case-INSENSITIVE, so a
+' parameter called drillId is the same name as the global DrillId: it shadows
+' it, and "DrillId = drillId" quietly assigns the local to itself while the
+' global stays empty. That produced a drill whose start line said CRADLE and
+' whose every feed was a drop catch. Parameters here are prefixed to keep
+' them distinct from the globals they set.
+Sub StartDrill(aDrill, aSide, aDifficulty, aAttempts)
+    DrillId = aDrill
+    DrillSide = aSide
+    DrillDifficulty = aDifficulty
+    DrillTotal = aAttempts
+    DrillAttempt = 0
+    DrillSuccess = 0
+    DrillLastVerdict = -1
+    DrillActive = True
+    FeedOwner = "drill"
+
+    ' Header row, so a session log can always be traced back to the physics
+    ' and the settings it was recorded under.
+    DebugLog "drill", "start," & DrillName(DrillId) & ",side=" & SideName(DrillSide) & _
+        ",difficulty=" & DifficultyName(DrillDifficulty) & ",attempts=" & DrillTotal & _
+        ",physics=" & PhysicsSignature()
+
+    UpdateTrainingDisplay
+    NextAttempt
+End Sub
+
+Sub EndDrill()
+    DrillActive = False
+    FeedOwner = ""
+    DrillWaitFrames = -1
+    DebugLog "drill", "end," & DrillName(DrillId) & ",side=" & SideName(DrillSide) & _
+        ",attempts=" & DrillAttempt & ",success=" & DrillSuccess & _
+        ",accuracy=" & DrillAccuracy() & "%"
+    UpdateTrainingDisplay
+End Sub
+
+Sub ResetDrill()
+    If Not DrillActive Then Exit Sub
+    DebugLog "drill", "reset"
+    StartDrill DrillId, DrillSide, DrillDifficulty, DrillTotal
+End Sub
+
+' Which physical side this attempt uses. Alternating flips each attempt so
+' both hands get equal work inside one set.
+Function AttemptSide()
+    If DrillSide = SIDE_ALTERNATING Then
+        If (DrillAttempt Mod 2) = 0 Then AttemptSide = SIDE_RIGHT Else AttemptSide = SIDE_LEFT
+    Else
+        AttemptSide = DrillSide
+    End If
+End Function
+
+Sub NextAttempt()
+    If Not DrillActive Then Exit Sub
+
+    If DrillAttempt >= DrillTotal Then
+        EndDrill
+        Exit Sub
+    End If
+
+    DrillAttempt = DrillAttempt + 1
+
+    ' The player supplies the flipper input; the drill never actuates it.
+    ' (The validation harness in 65- does, but that is a test rig, not a
+    ' drill, and it never runs while a drill is active.)
+    FeedScheduleFlipper -1, -1
+
+    Select Case DrillId
+        Case DRILL_CRADLE
+            FeedCradleTo AttemptSide(), DrillDifficulty
+        Case Else
+            FeedDropCatchTo AttemptSide(), DrillDifficulty
+    End Select
+
+    UpdateTrainingDisplay
+End Sub
+
+' Called by the feeder when an attempt's measurements are complete.
+Sub DrillAttemptComplete()
+    Dim v
+    If Not DrillActive Then Exit Sub
+
+    v = EvaluateAttempt()
+    DrillLastVerdict = v
+    If VerdictIsSuccess(v) Then DrillSuccess = DrillSuccess + 1
+
+    DebugLog "attempt", AttemptRecord(DrillName(DrillId), SideName(AttemptSide()), _
+        DifficultyName(DrillDifficulty), DrillAttempt, v)
+
+    UpdateTrainingDisplay
+
+    ' Pause long enough to read the verdict, then go again. Counted in frames
+    ' for the same reason the feeder's windows are.
+    DrillWaitFrames = OptResetDelayFrames()
+End Sub
+
+' Converts the menu's reset delay into frames. 90 Hz is the VR target and the
+' worst case for a frame-counted delay feeling short.
+Function OptResetDelayFrames()
+    Dim ms
+    If OptionsReady Then ms = OptResetDelayMs Else ms = DEFAULT_RESET_DELAY_MS
+    OptResetDelayFrames = Int(ms * 90 / 1000)
+End Function
+
+' Ticked once per rendered frame from the physics timer.
+Sub DrillTick()
+    If Not DrillActive Then Exit Sub
+    If DrillWaitFrames < 0 Then Exit Sub
+
+    DrillWaitFrames = DrillWaitFrames - 1
+    If DrillWaitFrames <= 0 Then
+        DrillWaitFrames = -1
+        NextAttempt
+    End If
+End Sub
+
+' ---------------------------------------------------------------------------
 '  module: scripts/90-training-input.vbs
 ' ---------------------------------------------------------------------------
 '============================================================================
@@ -2893,10 +3267,17 @@ Sub TrainingKeyDown(ByVal keycode)
         Case KEY_C
             FeederCalibrate SIDE_RIGHT, 20
 
-        Case KEY_1, KEY_2, KEY_3, KEY_4, KEY_5, KEY_R
-            ' Drill selection, difficulty and reset arrive with the drill
-            ' state machine in milestone 4. Logging the press now means the
-            ' binding can be confirmed on the real table before then.
+        Case KEY_1
+            ' Start (or restart) the drill currently selected in the menu.
+            StartDrill OptDrillToDrillId(), CurrentSide(), CurrentDifficulty(), CurrentAttempts()
+
+        Case KEY_R
+            ResetDrill
+
+        Case KEY_2, KEY_3, KEY_4, KEY_5
+            ' Drill and difficulty selection live in the in-game menu, which
+            ' is the only selector that works in VR. These keys stay bound as
+            ' a desktop shortcut and are wired in a later milestone.
             DebugLog "input", "unbound drill key scancode=" & keycode
 
     End Select
@@ -2918,6 +3299,74 @@ Function CurrentDifficulty()
         CurrentDifficulty = DIFF_FIXED
     End If
 End Function
+
+' The menu's drill index covers the full nine-drill roster; only three are
+' implemented. Anything else falls back to the drop catch and says so, rather
+' than starting a drill that does nothing.
+Function OptDrillToDrillId()
+    Dim d
+    If OptionsReady Then d = OptDrill Else d = 0
+    Select Case d
+        Case 0 : OptDrillToDrillId = DRILL_DROP_CATCH
+        Case 1 : OptDrillToDrillId = DRILL_LIVE_CATCH
+        Case Else
+            DebugLog "drill", "drill index " & d & " not implemented yet, using drop catch"
+            OptDrillToDrillId = DRILL_DROP_CATCH
+    End Select
+End Function
+
+Function CurrentSide()
+    If OptionsReady Then CurrentSide = OptSide Else CurrentSide = SIDE_RIGHT
+End Function
+
+Function CurrentAttempts()
+    If OptionsReady Then CurrentAttempts = OptAttempts Else CurrentAttempts = DEFAULT_ATTEMPTS_PER_SET
+End Function
+
+' ---------------------------------------------------------------------------
+'  module: scripts/90-ui.vbs
+' ---------------------------------------------------------------------------
+'============================================================================
+'  ZUI: TRAINING DISPLAY
+'============================================================================
+'
+'  Four text decals on the apron, below the flippers.
+'
+'  Decals are used rather than a TextBox because a TextBox is screen-space:
+'  in VR it floats in front of the playfield and reads as a rendering fault.
+'  A decal is real playfield geometry with a scriptable Text property, so it
+'  sits on the apron and is legible from the player's actual viewpoint in
+'  both VR and desktop. It is the only dynamic text VPX offers that survives
+'  being looked at from an angle.
+'
+'============================================================================
+
+Sub UpdateTrainingDisplay()
+    If Not DrillActive Then
+        UILine1.Text = "TILT LAB"
+        UILine2.Text = "Press 1 to start   D for debug"
+        UILine3.Text = ""
+        If DrillAttempt > 0 Then
+            UILine4.Text = "Last set: " & DrillSuccess & "/" & DrillAttempt & _
+                           "   " & DrillAccuracy() & "%"
+        Else
+            UILine4.Text = ""
+        End If
+        Exit Sub
+    End If
+
+    UILine1.Text = DrillName(DrillId) & " - " & SideName(AttemptSide())
+    UILine2.Text = DifficultyName(DrillDifficulty)
+    UILine3.Text = "Attempt " & DrillAttempt & " / " & DrillTotal & _
+                   "    Success " & DrillSuccess & _
+                   "    " & DrillAccuracy() & "%"
+
+    If DrillLastVerdict >= 0 Then
+        UILine4.Text = VerdictName(DrillLastVerdict)
+    Else
+        UILine4.Text = ""
+    End If
+End Sub
 
 ' ---------------------------------------------------------------------------
 '  module: scripts/95-debug.vbs
@@ -3100,6 +3549,15 @@ Sub SelfTestTick()
             ValidationStart VAL_DEAD, SIDE_RIGHT
         Case "valid-speed"
             ValidationStart VAL_SPEED, SIDE_RIGHT
+
+        ' Exercises the drill loop itself: counters, evaluation, display and
+        ' the between-attempt delay. With no player input every attempt will
+        ' be a miss or a drain, which is the correct outcome and still proves
+        ' the machinery runs a full set and reports.
+        Case "drill"
+            StartDrill DRILL_DROP_CATCH, SIDE_RIGHT, DIFF_FIXED, 5
+        Case "drill-cradle"
+            StartDrill DRILL_CRADLE, SIDE_RIGHT, DIFF_FIXED, 5
         Case Else
             DebugLog "selftest", "unknown mode,ignored"
     End Select

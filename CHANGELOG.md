@@ -52,6 +52,19 @@ Versions track the training capability of the table, not the tooling around it.
     than an impression.
   - Engineering keys: `F` feed right, `G` feed left, `C` calibrate.
 
+- Milestone 4 (partial): drill layer.
+  - `70-scoring.vbs`: verdicts (`PERFECT`, `CONTROLLED`, `PARTIAL`, `MISS`,
+    `SHOT`, `DRAIN`) from thresholds measured by the validation sweeps, not
+    guessed. No `EARLY`/`LATE`, which the data cannot support.
+  - `80-drills.vbs`: drill state machine with attempt counting, accuracy,
+    alternating sides and a frame-counted delay between attempts.
+  - `90-ui.vbs`: training display on four apron text decals. Decals are
+    playfield geometry with a scriptable `Text` property, so unlike a
+    `TextBox` they are visible in VR.
+  - `65-validation.vbs`: automated physics validation with timing and
+    feed-speed sweeps, run headlessly through `-CaptureAttract`.
+  - Keys `1` and `R` now start and restart a drill.
+
 ### Notes
 - No drills yet. The table boots and plays as a plain lower-playfield table.
   The full nine-drill roster is registered in the menu so the menu itself can

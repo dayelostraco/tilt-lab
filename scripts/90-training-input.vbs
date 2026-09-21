@@ -44,10 +44,17 @@ Sub TrainingKeyDown(ByVal keycode)
         Case KEY_C
             FeederCalibrate SIDE_RIGHT, 20
 
-        Case KEY_1, KEY_2, KEY_3, KEY_4, KEY_5, KEY_R
-            ' Drill selection, difficulty and reset arrive with the drill
-            ' state machine in milestone 4. Logging the press now means the
-            ' binding can be confirmed on the real table before then.
+        Case KEY_1
+            ' Start (or restart) the drill currently selected in the menu.
+            StartDrill OptDrillToDrillId(), CurrentSide(), CurrentDifficulty(), CurrentAttempts()
+
+        Case KEY_R
+            ResetDrill
+
+        Case KEY_2, KEY_3, KEY_4, KEY_5
+            ' Drill and difficulty selection live in the in-game menu, which
+            ' is the only selector that works in VR. These keys stay bound as
+            ' a desktop shortcut and are wired in a later milestone.
             DebugLog "input", "unbound drill key scancode=" & keycode
 
     End Select
@@ -68,4 +75,27 @@ Function CurrentDifficulty()
     Else
         CurrentDifficulty = DIFF_FIXED
     End If
+End Function
+
+' The menu's drill index covers the full nine-drill roster; only three are
+' implemented. Anything else falls back to the drop catch and says so, rather
+' than starting a drill that does nothing.
+Function OptDrillToDrillId()
+    Dim d
+    If OptionsReady Then d = OptDrill Else d = 0
+    Select Case d
+        Case 0 : OptDrillToDrillId = DRILL_DROP_CATCH
+        Case 1 : OptDrillToDrillId = DRILL_LIVE_CATCH
+        Case Else
+            DebugLog "drill", "drill index " & d & " not implemented yet, using drop catch"
+            OptDrillToDrillId = DRILL_DROP_CATCH
+    End Select
+End Function
+
+Function CurrentSide()
+    If OptionsReady Then CurrentSide = OptSide Else CurrentSide = SIDE_RIGHT
+End Function
+
+Function CurrentAttempts()
+    If OptionsReady Then CurrentAttempts = OptAttempts Else CurrentAttempts = DEFAULT_ATTEMPTS_PER_SET
 End Function

@@ -135,6 +135,24 @@ def main() -> int:
             errors.append(f"line {n}: Const {m.group(1)} = {m.group(2).strip()!r} "
                           f"is not a literal; VBScript rejects this at COMPILE time")
 
+    # --- a parameter must not shadow a global ------------------------------
+    # VBScript identifiers are case-insensitive, so `Sub S(drillId)` shadows a
+    # global `DrillId`. `DrillId = drillId` then assigns the local to itself
+    # and the global is silently never set. No error, no warning, wrong
+    # behaviour a long way from the cause.
+    PARAMS = re.compile(r"^\s*(?:Public\s+|Private\s+)?(?:Sub|Function)\s+\w+\s*\(([^)]*)\)", re.I)
+    globals_lc = {n for n, hits in seen.items()
+                  if any(k in ("dim", "const") for _, k in hits)}
+    for n, raw in enumerate(lines, 1):
+        m = PARAMS.match(strip_comment(raw))
+        if not m:
+            continue
+        for a in m.group(1).split(","):
+            a = a.strip().removeprefix("ByVal ").removeprefix("ByRef ").strip()
+            if a and a.lower() in globals_lc:
+                errors.append(f"line {n}: parameter '{a}' shadows the global of the "
+                              f"same name (VBScript is case-insensitive); rename it")
+
     # --- every referenced table object must exist --------------------------
     # The ported VPW code addresses table parts by name. A missing part is a
     # runtime error that only appears once the table is played on Windows,
@@ -161,7 +179,6 @@ def main() -> int:
                for m in [DECL.match(strip_comment(l))] if m}
     # Sub/Function parameters are locals, and VPW passes flippers and table
     # objects into subs constantly, so without these the check is all noise.
-    PARAMS = re.compile(r"^\s*(?:Public\s+|Private\s+)?(?:Sub|Function)\s+\w+\s*\(([^)]*)\)", re.I)
     for l in lines:
         m = PARAMS.match(strip_comment(l))
         if m:

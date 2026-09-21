@@ -66,6 +66,15 @@ Sub SelfTestTick()
             ValidationStart VAL_DEAD, SIDE_RIGHT
         Case "valid-speed"
             ValidationStart VAL_SPEED, SIDE_RIGHT
+
+        ' Exercises the drill loop itself: counters, evaluation, display and
+        ' the between-attempt delay. With no player input every attempt will
+        ' be a miss or a drain, which is the correct outcome and still proves
+        ' the machinery runs a full set and reports.
+        Case "drill"
+            StartDrill DRILL_DROP_CATCH, SIDE_RIGHT, DIFF_FIXED, 5
+        Case "drill-cradle"
+            StartDrill DRILL_CRADLE, SIDE_RIGHT, DIFF_FIXED, 5
         Case Else
             DebugLog "selftest", "unknown mode,ignored"
     End Select

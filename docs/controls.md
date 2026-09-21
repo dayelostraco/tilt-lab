@@ -79,12 +79,12 @@ put.
 
 | Key | Scancode | Action | Status |
 |---|---|---|---|
-| `1` | 2 | Start / restart the current drill | milestone 4 |
+| `1` | 2 | Start the drill selected in the menu | **working** |
 | `2` | 3 | Next drill | milestone 4 |
 | `3` | 4 | Previous drill | milestone 4 |
 | `4` | 5 | Increase difficulty | milestone 5 |
 | `5` | 6 | Decrease difficulty | milestone 5 |
-| `R` | 19 | Reset the current drill | milestone 4 |
+| `R` | 19 | Restart the current drill from attempt 1 | **working** |
 | `D` | 32 | Toggle debug mode | **working** |
 | `F` | 33 | Feed one ball to the right flipper | **working** |
 | `G` | 34 | Feed one ball to the left flipper | **working** |

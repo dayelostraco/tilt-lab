@@ -1,0 +1,28 @@
+{
+  "Decal": {
+    "center": {
+      "x": 430.0,
+      "y": 2040.0
+    },
+    "width": 620.0,
+    "height": 40.0,
+    "rotation": 0.0,
+    "image": "",
+    "surface": "",
+    "name": "UILine4",
+    "text": "",
+    "decal_type": "text",
+    "material": "",
+    "color": "#ffd24a",
+    "sizing_type": "manual_size",
+    "vertical_text": false,
+    "backglass": false,
+    "part_group_name": "Visuals",
+    "font": {
+      "style": [],
+      "weight": 700,
+      "size": 240000,
+      "name": "Arial"
+    }
+  }
+}

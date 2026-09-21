@@ -52,6 +52,42 @@ Detection is best-effort and reports only what it measured. Every verdict is
 logged alongside the raw values that produced it, so thresholds are re-tuned
 against real sessions instead of guessed.
 
+### The thresholds, and where they came from
+
+Measured on 2026-09-21 by the automated sweeps in `scripts/65-validation.vbs`,
+not guessed:
+
+| Observed behaviour | control speed | distance from flipper base |
+|---|---|---|
+| settled cradle | 0.605 to 0.740 | 81 vpu |
+| clean live catch | ~2.0 | ~198 vpu |
+| partial catch | ~3.0 | ~200 vpu |
+| untouched dead bounce | ~3.0 | ~288 vpu |
+| flipped shot | 13 to 34 | 300 to 1700 vpu |
+
+**Control needs speed AND distance.** Either alone is ambiguous, and the
+first run of the drill loop proved it: with no player input at all, every
+attempt scored `PARTIAL`, because a ball that dead-bounces off a lowered
+flipper also sheds most of its speed by the time it is measured. It was 288
+vpu away by then. Adding a distance gate turned those into `MISS`, which is
+what doing nothing deserves.
+
+Verdicts: `PERFECT`, `CONTROLLED`, `PARTIAL`, `MISS`, `SHOT`, `DRAIN`.
+`PERFECT` and `CONTROLLED` count as success.
+
+### Contact detection
+
+Contact normally comes from the flipper's `Collide` event, with the previous
+frame's state kept as the pre-contact reading. A gentle roll-on may not
+generate a collision at all, so there is a fallback: within 42 vpu of the
+flipper's line *segment* and moving under 2.5, after at least 10 frames of
+flight.
+
+All three qualifiers are load-bearing. Measuring to the flipper's pivot
+instead of its surface made the cradle feed's own launch point count as
+contact on frame 2; without the frame floor, the same thing happens to any
+feed that starts slow.
+
 ### Drop catch
 
 Signals available around the contact moment:

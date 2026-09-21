@@ -232,6 +232,24 @@ Dim PendX, PendY, PendZ, PendVX, PendVY, PendVZ, PendName
 ' reaches the flipper can be diagnosed from the log instead of by watching.
 Const FEED_TRACE_EVERY = 30
 
+' Soft-contact fallback.
+'
+' Contact is normally taken from the flipper's Collide event, which is exact.
+' But a slow ball rolling gently onto a flipper may never generate a
+' collision at all: the cradle drill recorded five attempts with every
+' measurement zero because nothing ever fired.
+'
+' So if the ball gets within touching distance of the flipper's SURFACE and
+' is moving slowly, that counts as contact too.
+'
+' It has to be distance to the flipper's line segment, not to its pivot. A
+' pivot-based radius of 140 (length plus a ball) is satisfied by the cradle
+' feed's own launch point, which sits 109 vpu from the pivot: every attempt
+' registered contact on frame 2, before the ball had moved.
+Const FEED_SOFT_RADIUS = 42     ' ball radius 25 + flipper end radius ~12
+Const FEED_SOFT_SPEED  = 2.5
+Const FEED_SOFT_MIN_FRAMES = 10 ' never in the first frames after launch
+
 ' Give up on a feed that never arrives, so a calibration run cannot hang.
 ' Also in frames, for the same reason.
 Const FEED_TIMEOUT_FRAMES = 600
@@ -456,6 +474,17 @@ Sub FeederUpdate()
                 Exit Sub
             End If
 
+            ' Soft contact: close to the flipper and barely moving. Checked
+            ' before the sample rolls forward so the reading describes the
+            ' approach rather than the already-stopped ball.
+            If spd <= FEED_SOFT_SPEED And PrevValid And FeedFrames >= FEED_SOFT_MIN_FRAMES Then
+                If DistanceToFlipperSurface(FeedBallObj.X, FeedBallObj.Y, flip) <= FEED_SOFT_RADIUS Then
+                    DebugLog "feed", "softcontact,seq=" & FeedSeq & ",f=" & FeedFrames
+                    FeederNoteFlipperContact flip
+                    Exit Sub
+                End If
+            End If
+
             ' Roll the one-frame-old sample forward. This is what becomes the
             ' pre-contact reading the instant the flipper reports a hit.
             PrevX = FeedBallObj.X       : PrevY = FeedBallObj.Y
@@ -512,6 +541,7 @@ Sub FeedNotifyComplete()
     Select Case FeedOwner
         Case "calib" : FeederCalibrateStep
         Case "valid" : ValidationStep
+        Case "drill" : DrillAttemptComplete
     End Select
 End Sub
 
@@ -535,6 +565,30 @@ Sub FeederNoteFlipperContact(flipper)
         ",flipperAngle=" & Round(flipper.CurrentAngle, 2) & _
         ",flightFrames=" & FeedFrames
 End Sub
+
+' Perpendicular distance from a point to the flipper's line SEGMENT, from
+' pivot to tip at its current angle, clamped at both ends.
+'
+' VPW's DistanceFromFlipper is not this: it measures to the infinite axis
+' line, so a ball anywhere along that line reads as touching.
+Function DistanceToFlipperSurface(px, py, flip)
+    Dim ax, ay, bx, by, dx, dy, t, len2
+    ax = flip.X : ay = flip.Y
+    bx = ax + flip.Length * Sin(Radians(flip.CurrentAngle))
+    by = ay - flip.Length * Cos(Radians(flip.CurrentAngle))
+
+    dx = bx - ax : dy = by - ay
+    len2 = dx * dx + dy * dy
+    If len2 = 0 Then
+        DistanceToFlipperSurface = Distance(px, py, ax, ay)
+        Exit Function
+    End If
+
+    t = ((px - ax) * dx + (py - ay) * dy) / len2
+    If t < 0 Then t = 0
+    If t > 1 Then t = 1
+    DistanceToFlipperSurface = Distance(px, py, ax + t * dx, ay + t * dy)
+End Function
 
 Function SafeRatio(a, b)
     If b = 0 Then SafeRatio = 0 Else SafeRatio = a / b
